@@ -67,7 +67,7 @@ The keys were checked against VS Code 1.84.2's default keybindings on macOS: non
 
 ## Setup (from a clean clone)
 
-Prerequisites: Node ≥ 22.14, VS Code ≥ 1.84, and either [Ollama](https://ollama.com) (free, local) or an API key for a model provider supported by TrueForge.
+Prerequisites: Node ≥ 22.14, VS Code ≥ 1.84, and either [Ollama](https://ollama.com) (free, local) or an API key for a model provider supported by TrueForge. Built and tested on macOS; for Windows see the note under step 1.
 
 ```bash
 git clone https://github.com/samuelmorningstar23/forgelight.git && cd forgelight
@@ -82,6 +82,21 @@ scripts/start-trueforge.sh
 ```
 
 This runs `npx @truefoundry/trueforge@0.185.1` (the tested version; `TRUEFORGE_VERSION=latest scripts/start-trueforge.sh` opts in to the newest) on <http://localhost:8790>. TrueForge's local mode blocks outbound requests to loopback addresses by default; the script sets `OUTBOUND_URL_ALLOWED_HOSTS='["localhost","127.0.0.1"]'` so TrueForge can reach the extension's MCP server and a local Ollama. Nothing else is exposed. It also raises TrueForge's model timeouts (`MODEL_HTTP_HEADERS_TIMEOUT_MS=600000`, `MODEL_HTTP_BODY_TIMEOUT_MS=300000`; the default 20 s header timeout is too short for a local model reading a long prompt or loading cold). Started with plain `npx @truefoundry/trueforge`, TrueForge rejects the MCP registration with "Outbound URL blocked"; Forgelight then tells you to use the script.
+
+**Windows.** Forgelight was built and tested on macOS. `scripts/start-trueforge.sh` is a bash script and does not run in PowerShell or Command Prompt, so a fresh Windows install shows "Cannot reach TrueForge" until TrueForge is started another way:
+
+- **WSL 2 (recommended).** Clone the repository inside WSL, open the folder with VS Code's WSL extension, and follow this page unchanged. The agent's `run_command` tool starts `/bin/bash`, so letting the agent run tests needs WSL.
+- **Git Bash.** `bash scripts/start-trueforge.sh` starts TrueForge.
+- **PowerShell.** Set the same variables and start TrueForge directly (not tested by us):
+
+  ```powershell
+  $env:OUTBOUND_URL_ALLOWED_HOSTS = '["localhost","127.0.0.1"]'
+  $env:MODEL_HTTP_HEADERS_TIMEOUT_MS = '600000'
+  $env:MODEL_HTTP_BODY_TIMEOUT_MS = '300000'
+  npx -y "@truefoundry/trueforge@0.185.1"
+  ```
+
+On any system, leave that terminal open and wait for `Agent server listening on http://localhost:8790` before opening the extension window (the first run downloads TrueForge). If the panel still reports "Cannot reach TrueForge", set `forgelight.trueforgeUrl` to `http://127.0.0.1:8790`.
 
 ### 2. Configure models in TrueForge
 
