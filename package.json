@@ -1,0 +1,265 @@
+{
+  "name": "forgelight",
+  "displayName": "Forgelight: TrueForge coding agent",
+  "description": "An editor-native coding agent for VS Code whose agent loop runs on TrueForge. It shows its work: every file it reads and why, and every hunk it wants to write, before anything touches disk.",
+  "version": "0.1.0",
+  "publisher": "forgelight",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Machine Learning",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "forgelight",
+          "title": "Forgelight",
+          "icon": "media/forgelight.svg"
+        }
+      ]
+    },
+    "views": {
+      "forgelight": [
+        {
+          "type": "webview",
+          "id": "forgelight.panel",
+          "name": "Agent"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "forgelight.inlineEdit",
+        "title": "Forgelight: Inline Edit Selection"
+      },
+      {
+        "command": "forgelight.cancel",
+        "title": "Forgelight: Cancel Current Run",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "forgelight.acceptHunk",
+        "title": "Forgelight: Accept Hunk"
+      },
+      {
+        "command": "forgelight.rejectHunk",
+        "title": "Forgelight: Reject Hunk"
+      },
+      {
+        "command": "forgelight.acceptAll",
+        "title": "Forgelight: Accept All Hunks",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "forgelight.rejectAll",
+        "title": "Forgelight: Reject All Hunks",
+        "icon": "$(close-all)"
+      },
+      {
+        "command": "forgelight.applyReview",
+        "title": "Forgelight: Apply Reviewed Hunks",
+        "icon": "$(save)"
+      },
+      {
+        "command": "forgelight.undoLastApplied",
+        "title": "Forgelight: Undo Last Applied Change",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "forgelight.revertLastRun",
+        "title": "Forgelight: Revert Last Run (all files)",
+        "icon": "$(history)"
+      },
+      {
+        "command": "forgelight.openSession",
+        "title": "Forgelight: Open Current Session in TrueForge"
+      },
+      {
+        "command": "forgelight.setup",
+        "title": "Forgelight: Re-register MCP Server and Agent with TrueForge"
+      },
+      {
+        "command": "forgelight.focusPanel",
+        "title": "Forgelight: Focus Agent Panel"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "forgelight.inlineEdit",
+        "key": "ctrl+alt+e",
+        "mac": "cmd+alt+e",
+        "when": "editorTextFocus && editorHasSelection"
+      },
+      {
+        "command": "forgelight.cancel",
+        "key": "ctrl+alt+backspace",
+        "mac": "cmd+alt+backspace",
+        "when": "forgelight.running"
+      },
+      {
+        "command": "forgelight.cancel",
+        "key": "escape",
+        "when": "forgelight.running && !forgelight.reviewing && !editorHasSelection && !editorHasMultipleSelections && !editorHoverVisible && !editorHoverFocused && !notificationToastsVisible && !suggestWidgetVisible && !findWidgetVisible && !inQuickOpen && !inSnippetMode && !parameterHintsVisible && !renameInputVisible && !referenceSearchVisible && !inlineSuggestionVisible"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "forgelight.acceptAll",
+          "when": "forgelight.reviewing",
+          "group": "navigation@1"
+        },
+        {
+          "command": "forgelight.rejectAll",
+          "when": "forgelight.reviewing",
+          "group": "navigation@2"
+        },
+        {
+          "command": "forgelight.applyReview",
+          "when": "forgelight.reviewing",
+          "group": "navigation@3"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "forgelight.cancel",
+          "when": "view == forgelight.panel && forgelight.running",
+          "group": "navigation@1"
+        },
+        {
+          "command": "forgelight.undoLastApplied",
+          "when": "view == forgelight.panel",
+          "group": "navigation@2"
+        },
+        {
+          "command": "forgelight.revertLastRun",
+          "when": "view == forgelight.panel",
+          "group": "2_history@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "forgelight.acceptHunk",
+          "when": "false"
+        },
+        {
+          "command": "forgelight.rejectHunk",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Forgelight",
+      "properties": {
+        "forgelight.trueforgeUrl": {
+          "type": "string",
+          "default": "http://localhost:8790",
+          "description": "Base URL of the local TrueForge server (run scripts/start-trueforge.sh)."
+        },
+        "forgelight.models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "ollama/qwen3-6-35b"
+          ],
+          "description": "TrueForge model FQNs in priority order. The first is the primary; if it fails with a model error Forgelight retries, then falls back to the next one automatically."
+        },
+        "forgelight.retryAttempts": {
+          "type": "number",
+          "default": 1,
+          "description": "Retries of the same model (with exponential backoff) before falling back."
+        },
+        "forgelight.retryBackoffMs": {
+          "type": "number",
+          "default": 1500,
+          "description": "Initial backoff between retries, in milliseconds."
+        },
+        "forgelight.contextBudgetTokens": {
+          "type": "number",
+          "default": 6000,
+          "description": "Token budget for automatically retrieved context."
+        },
+        "forgelight.mcpPort": {
+          "type": "number",
+          "default": 7341,
+          "description": "Port for the editor MCP tool server (127.0.0.1). 0 picks a free port."
+        },
+        "forgelight.commandTimeoutSec": {
+          "type": "number",
+          "default": 90,
+          "description": "Timeout for commands the agent runs, in seconds (max 110: TrueForge abandons tool calls after 120 s).",
+          "maximum": 110
+        },
+        "forgelight.iterationLimit": {
+          "type": "number",
+          "default": 60,
+          "description": "Agent-loop iteration limit per turn."
+        },
+        "forgelight.verifyBeforeAccept": {
+          "type": "boolean",
+          "default": true,
+          "description": "While you review a proposed change, run the relevant tests on a temporary copy of the workspace with the whole proposal applied, and show the result on the review card. The proposal's code runs only in a temporary copy under a macOS sandbox that blocks writes to your workspace and home directory and blocks outbound network access; on other platforms the proposal is not run before you accept it (run the tests yourself)."
+        },
+        "forgelight.verifyCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Test command for those shadow runs. Leave empty to detect it from the project. Placeholders: {python} (the workspace's Python interpreter), {tests} (the test targets chosen for the change), {file} (the changed file)."
+        },
+        "forgelight.verifyTimeoutSec": {
+          "type": "number",
+          "default": 90,
+          "minimum": 5,
+          "maximum": 600,
+          "description": "Timeout for one shadow test run, in seconds."
+        },
+        "forgelight.autoApproveSafeCommands": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run commands the command guard rates as 'test' or 'read' (e.g. pytest, git status) without asking. They still appear in the panel. Reads that may expose secrets or read files outside the workspace still ask, commands that write, use the network or are destructive always ask, and catastrophic ones are always blocked."
+        },
+        "forgelight.circuitBreakerMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "maximum": 120,
+          "description": "After a model fails, skip it for this many minutes and use the next model in forgelight.models instead. The current value always applies, also to a model that already failed: 0 turns the breaker off at once. Changing forgelight.models (or this setting) resets it."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "diffEditor.codeLens": true
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit -p .",
+    "package": "npx -y @vscode/vsce package --no-dependencies",
+    "test:headless": "node esbuild.mjs && node dist/test/headless/runTask.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@truefoundry/trueforge-sdk": "^0.185.0",
+    "diff": "^9.0.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.2",
+    "@types/node": "^22.20.5",
+    "@types/vscode": "^1.84.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

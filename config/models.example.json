@@ -1,0 +1,73 @@
+{
+  "_comment": "Copy to config/models.json (git-ignored), put real keys there, then run: node scripts/setup-models.mjs. Each entry is a TrueForge model-provider manifest (POST /api/v1/settings/model-providers). Then list the model FQNs you want, in priority order, in the VS Code setting forgelight.models (primary first, fallbacks after).",
+  "providers": [
+    {
+      "type": "custom",
+      "name": "ollama",
+      "base_url": "http://localhost:11434/v1",
+      "models": [
+        {
+          "model_id": "forge-qwen3.6-64k",
+          "name": "qwen3-6-35b",
+          "properties": {
+            "context_length": 65536,
+            "max_output_tokens": 16384
+          }
+        }
+      ]
+    },
+    {
+      "type": "google-gemini",
+      "auth": {
+        "api_key": "REPLACE_WITH_YOUR_GEMINI_API_KEY"
+      },
+      "models": [
+        {
+          "model_id": "gemini-3.5-flash-lite",
+          "name": "gemini-3-5-flash-lite",
+          "properties": {
+            "context_length": 1048576,
+            "max_output_tokens": 65536,
+            "reasoning_efforts": [
+              "minimal",
+              "low",
+              "medium",
+              "high"
+            ]
+          }
+        },
+        {
+          "model_id": "gemini-3.1-flash-lite",
+          "name": "gemini-3-1-flash-lite",
+          "properties": {
+            "context_length": 1048576,
+            "max_output_tokens": 65536,
+            "reasoning_efforts": [
+              "minimal",
+              "low",
+              "medium",
+              "high"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "custom",
+      "name": "unreachable",
+      "base_url": "http://127.0.0.1:9/v1",
+      "models": [
+        {
+          "model_id": "nope",
+          "name": "broken-model",
+          "properties": {
+            "context_length": 32768,
+            "max_output_tokens": 4096
+          }
+        }
+      ]
+    }
+  ],
+  "_task_c": "For Task C (resilience) set forgelight.models to [\"unreachable/broken-model\", \"ollama/qwen3-6-35b\"]: the first model fails to connect, Forgelight retries once with backoff, then falls back to the second model automatically.",
+  "_gemini": "Free Google AI Studio key (no card). Free tier is about 15 requests/min and 500 requests/day per project for each Flash-Lite model; quota resets at 13:30 IST. Use the native google-gemini provider, not custom: TrueForge only replays Gemini thought signatures through the native provider."
+}

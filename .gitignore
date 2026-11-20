@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.spike/
+*.vsix
+.env
+config/models.json
+test/panel-preview/*.jsonl

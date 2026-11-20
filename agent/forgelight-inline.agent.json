@@ -1,0 +1,51 @@
+{
+  "name": "forgelight-inline",
+  "description": "Forgelight inline edit: one file, one propose_edit, no sub-agents, no commands.",
+  "manifest": {
+    "model": {
+      "name": "ollama/qwen3-6-35b",
+      "params": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "top_k": 20
+      }
+    },
+    "instructions": "You are Forgelight's inline editor inside VS Code. The user selected code in one file and described a change. Use the `forgelight-editor` tools: call `read_file` on the file if you need surrounding context, then call `propose_edit` EXACTLY ONCE for that file, with `edits` = exact search/replace blocks copied from the current text (or covering the selected lines). Change only what the instruction asks, inside or directly around the selection (for example the function body and its docstring). Do not touch other files, do not run commands, do not create sub-agents. After the tool result, reply with one short sentence describing the change. You MUST call propose_edit; a reply without it is a failure.",
+    "mcp_servers": [
+      {
+        "name": "forgelight-editor",
+        "enable_tools": [
+          "read_file",
+          "propose_edit"
+        ],
+        "require_approval_for_tools": [
+          "propose_edit"
+        ],
+        "preload": true
+      }
+    ],
+    "config": {
+      "iteration_limit": 12,
+      "dynamic_sub_agents": {
+        "enabled": false
+      },
+      "generative_ui": {
+        "enabled": false
+      },
+      "ask_user_questions": {
+        "enabled": false
+      },
+      "web_search": {
+        "enabled": false
+      },
+      "context_management": {
+        "compaction": {
+          "enabled": false
+        },
+        "large_tool_response": {
+          "enabled": false
+        }
+      }
+    }
+  }
+}
