@@ -1,11 +1,12 @@
 # Forgelight: an editor-native coding agent on TrueForge
 
-TrueFoundry Forge-a-thon, Techfest IIT Bombay 2026-27 · Round 1 write-up · Repository: `<REPO_URL>` · Demo: `<VIDEO_URL>`
+TrueFoundry Forge-a-thon, Techfest IIT Bombay 2026-27 · Round 1 write-up · Repository: <https://github.com/samuelmorningstar23/forgelight> · Demo: `<VIDEO_URL>`
 
 ## 1. Team
 
 **Code Blooded**
-- Samuel Christ (team member): IIT Madras, BS in Data Science and Applications (online). GitHub `@<SAMUEL_GITHUB>`.
+
+- Samuel Christ (team member): IIT Madras, BS in Data Science and Applications (online). GitHub `@samuelmorningstar23`.
 - Hanmathgundam Hamsika (team leader): VIT-AP University, B.Tech CSE. GitHub `@<HAMSIKA_GITHUB>`.
 
 ## 2. Starting point
