@@ -420,7 +420,9 @@ export type PanelToExtension =
   | { type: 'applyReview'; changeId: string }
   | { type: 'openSession' }
   | { type: 'undo' }
-  | { type: 'revertRun'; runId: number };
+  | { type: 'revertRun'; runId: number }
+  /** Copy text to the clipboard (the finish card's "Copy summary"); handled by the panel host. */
+  | { type: 'copy'; text: string };
 
 /** Messages from the extension to the panel webview. */
 export type ExtensionToPanel =

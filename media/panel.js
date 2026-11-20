@@ -46,6 +46,9 @@
       '<path d="M4.5 6h7M4.5 8h5M4.5 10h6"/>',
     link:
       '<path d="M6.8 9.2a2.8 2.8 0 0 0 4 0l2.4-2.4a2.8 2.8 0 0 0-4-4l-1 1"/><path d="M9.2 6.8a2.8 2.8 0 0 0-4 0L2.8 9.2a2.8 2.8 0 0 0 4 4l1-1"/>',
+    thought: '<path d="M2.5 3.5h11v7.5h-6l-3 2.5V11h-2z"/><path d="M5.5 7.2h.01M8 7.2h.01M10.5 7.2h.01"/>',
+    copy: '<rect x="5.5" y="5.5" width="8" height="9" rx="1.2"/><path d="M10.5 5.5V2.8a1.3 1.3 0 0 0-1.3-1.3H3.8a1.3 1.3 0 0 0-1.3 1.3v7.4a1.3 1.3 0 0 0 1.3 1.3h1.7"/>',
+    flag: '<path d="M3 14.5V2"/><path d="M3 2.5h9l-2 3 2 3H3"/>',
   };
   const iconCache = new Map();
 
@@ -104,13 +107,18 @@
     return el('code', '', text);
   }
 
-  /** Make `root` expandable via `trigger` (toggles the 'open' class). */
-  function makeToggle(root, trigger, onOpen) {
+  /**
+   * Make `root` expandable via `trigger` (toggles the 'open' class). A flip by the user marks
+   * `root` as touched, so automatic folding leaves it alone afterwards.
+   */
+  function makeToggle(root, trigger, onOpen, onFlip) {
     const flip = () => {
       const open = !root.classList.contains('open');
       root.classList.toggle('open', open);
+      root.dataset.touched = '1';
       trigger.setAttribute('aria-expanded', String(open));
       if (open && onOpen) onOpen();
+      if (onFlip) onFlip(open);
     };
     trigger.setAttribute('aria-expanded', String(root.classList.contains('open')));
     trigger.addEventListener('click', flip);
@@ -124,6 +132,31 @@
         }
       });
     }
+  }
+
+  /** Open or close a makeToggle root from code (not a user action). */
+  function setOpen(root, trigger, open) {
+    root.classList.toggle('open', open);
+    if (trigger) trigger.setAttribute('aria-expanded', String(open));
+  }
+
+  /**
+   * Small icon counters ("[file] 4  [search] 2"), shared by step heads, sub-agent heads and the
+   * finish card. `counts` is [[icon, n, title], …]; zero counts are skipped.
+   */
+  function countChips(counts) {
+    const out = [];
+    for (const [icon, n, title] of counts) {
+      if (!n) continue;
+      const c = el('span', 'cnt');
+      const shown = el('span', '', String(n));
+      shown.setAttribute('aria-hidden', 'true');
+      // Screen readers get the words ("4 files read"), not a bare number.
+      c.append(ic(icon), shown, el('span', 'sr-only', title));
+      c.title = title;
+      out.push(c);
+    }
+    return out;
   }
 
   const numberFormat = new Intl.NumberFormat();
@@ -329,6 +362,47 @@
   let stick = true;
   /** A review/approval card that opened in this batch: brought into view if it is still open. */
   let reveal = null;
+  /**
+   * Motion (5) never plays for history (rule 6). Two gates: `animReady` opens after the first
+   * 350 ms without new messages once rendering has finished, and `liveBatch` is false for a batch
+   * that carries events emitted more than 2 s ago (the extension's replay on 'ready'), however
+   * late that replay arrives. Each node gets its entrance once, when it is first inserted
+   * (class fl-in, removed when the animation ends), so nothing already on screen re-animates.
+   */
+  let animReady = false;
+  let animTimer = 0;
+  let liveBatch = true;
+  function armAnim() {
+    if (animReady) return;
+    clearTimeout(animTimer);
+    animTimer = setTimeout(() => {
+      animReady = true;
+    }, 350);
+  }
+  /** True while rendering events as they happen (animate, and let decisions be seen first). */
+  function liveNow() {
+    return animReady && liveBatch;
+  }
+  const ANIM_SEL = '.card, .banner, .step, .tool, .group, .user-msg, .sysrow';
+  const seenNodes = new WeakSet();
+  new MutationObserver((records) => {
+    const animate = liveNow();
+    for (const r of records) {
+      for (const n of r.addedNodes) {
+        if (!(n instanceof Element)) continue;
+        const list = n.matches(ANIM_SEL) ? [n] : [];
+        for (const d of n.querySelectorAll(ANIM_SEL)) list.push(d);
+        for (const e of list) {
+          if (seenNodes.has(e)) continue; // moved, not new
+          seenNodes.add(e);
+          if (animate) e.classList.add('fl-in');
+        }
+      }
+    }
+  }).observe(ui.log, { childList: true, subtree: true });
+  ui.log.addEventListener('animationend', (e) => {
+    if (e.animationName === 'fl-rise' && e.target instanceof Element) e.target.classList.remove('fl-in');
+  });
 
   window.addEventListener('message', (e) => {
     const m = e.data;
@@ -349,6 +423,8 @@
     if (!scheduled) return;
     scheduled = false;
     const batch = queue.splice(0);
+    const now = Date.now();
+    liveBatch = !batch.some((m) => m.type === 'event' && typeof m.at === 'number' && now - m.at > 2000);
     for (const m of batch) {
       try {
         if (m.type === 'state') onState(m);
@@ -361,6 +437,8 @@
     }
     for (const block of dirty) block.render();
     dirty.clear();
+    // The quiet window starts when rendering has finished, not before a long batch.
+    if (batch.length) armAnim();
     renderHeader();
     if (stick) scrollToBottom();
     else if (batch.length) ui.jump.hidden = false;
@@ -422,6 +500,14 @@
       reverted: false,
       /** Feature 4: per-run context usage. */
       ctx: { calls: 0, subCalls: 0, inTotal: 0, outTotal: 0, peakPct: 0, peakTokens: 0, latestMain: null, latest: null },
+      /** The request text (for the finish card's copied summary). */
+      text: '',
+      /** changeId -> hunks of its review ({index, added, removed}), to count the accepted lines. */
+      changes: new Map(),
+      /** The finish card of a run that ended with status 'done'. */
+      finishCard: null,
+      /** This run's TrueForge session (run.session). */
+      sessionId: '',
     };
     run.threads.set('main', newThread('main', body, null));
     runs.set(runId, run);
@@ -431,23 +517,41 @@
   }
 
   function newThread(id, body, group) {
-    return { id, body, group, statusEl: null, titleEl: null, messages: new Map(), reasoning: new Map(), activeText: null, activeReasoning: null, finished: false };
+    return {
+      id,
+      body,
+      group,
+      statusEl: null,
+      titleEl: null,
+      headEl: null,
+      sumEl: null,
+      startAt: 0,
+      endAt: 0,
+      messages: new Map(),
+      reasoning: new Map(),
+      activeText: null,
+      activeReasoning: null,
+      /** The open step (1c) that collects thoughts, narration and reads. */
+      step: null,
+      finished: false,
+    };
   }
 
-  function getThread(run, threadId, title) {
+  function getThread(run, threadId, title, at) {
     const tid = threadId || 'main';
     let th = run.threads.get(tid);
     if (th) return th;
     const main = run.threads.get('main');
-    settle(main);
+    breakStep(main, at);
     const group = el('div', 'group open');
     const head = el('div', 'group-head');
     const iconWrap = el('span', 'tool-icon');
     iconWrap.append(ic('branch'));
     const titleEl = el('span', 'group-title', title || tid);
+    const sumEl = el('span', 'group-sum');
     const statusEl = el('span', 'tool-status');
     statusEl.append(el('span', 'spinner'));
-    head.append(ic('chev', 'chev'), iconWrap, el('span', 'group-kind', 'Subagent'), titleEl, statusEl);
+    head.append(ic('chev', 'chev'), iconWrap, el('span', 'group-kind', 'Subagent'), titleEl, sumEl, statusEl);
     const body = el('div', 'thread-body');
     group.append(head, body);
     makeToggle(group, head);
@@ -455,8 +559,192 @@
     th = newThread(tid, body, group);
     th.titleEl = titleEl;
     th.statusEl = statusEl;
+    th.headEl = head;
+    th.sumEl = sumEl;
+    th.startAt = num(at);
     run.threads.set(tid, th);
     return th;
+  }
+
+  // ----------------------------------------------------------- steps (1c)
+
+  /** Exploration tools: their rows fold into the current step with thoughts and narration. */
+  const STEP_TOOLS = new Set(['read_file', 'search_code', 'find_symbol', 'list_files', 'repo_map', 'create_sub_agent']);
+  const STEP_KIND = { read_file: 'read', search_code: 'search', find_symbol: 'search', list_files: 'list', repo_map: 'list', create_sub_agent: 'sub' };
+
+  function stepCounts(n) {
+    return [
+      ['file', n.read, plural(n.read, 'file') + ' read'],
+      ['search', n.search, n.search + (n.search === 1 ? ' search' : ' searches')],
+      ['folder', n.list, n.list + (n.list === 1 ? ' listing' : ' listings')],
+      ['branch', n.sub, plural(n.sub, 'sub-agent') + ' started'],
+      ['thought', n.thought, plural(n.thought, 'thought')],
+    ];
+  }
+
+  /** "Read 4 files, searched 2×": the label of a step whose model wrote no sentence. */
+  function countsSentence(n) {
+    const parts = [];
+    if (n.read) parts.push('read ' + plural(n.read, 'file'));
+    if (n.search) parts.push('searched ' + (n.search === 1 ? 'once' : n.search + '×'));
+    if (n.list) parts.push('listed files');
+    if (n.sub) parts.push('started ' + (n.sub === 1 ? 'a sub-agent' : n.sub + ' sub-agents'));
+    if (!parts.length) return n.thought ? 'Thought it through' : 'Worked';
+    const s = parts.join(', ');
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  /** First line of the step's last sentence, without markdown markers, about 90 characters. */
+  function stepSentence(st) {
+    for (let i = st.texts.length - 1; i >= 0; i--) {
+      const raw = st.texts[i].raw;
+      if (!raw || !raw.trim()) continue;
+      let line = firstLine(raw.replace(/^\s*(#{1,6}\s+|[-*+]\s+|\d{1,3}[.)]\s+|>\s*)/gm, '').replace(/\*\*/g, ''), 90);
+      // An odd backtick count (cut mid-span) would show a stray backtick.
+      if ((line.match(/`/g) || []).length % 2) line = line.replace(/`(?=[^`]*$)/, '');
+      if (line) return line;
+    }
+    return '';
+  }
+
+  function newStep(at) {
+    const root = el('div', 'step live');
+    const head = el('div', 'step-head');
+    const label = el('span', 'step-label', 'Working…');
+    const meta = el('span', 'step-meta');
+    head.append(ic('chev', 'chev'), label, meta);
+    const body = el('div', 'step-body');
+    root.append(head, body);
+    makeToggle(root, head);
+    const st = {
+      el: root,
+      body,
+      startAt: num(at),
+      lastAt: num(at),
+      endAt: 0,
+      live: true,
+      texts: [],
+      /** Blocks and rows inside (their `.step` points back here while they are folded in). */
+      refs: [],
+      n: { read: 0, search: 0, list: 0, sub: 0, thought: 0 },
+      refresh() {
+        meta.replaceChildren(...countChips(stepCounts(this.n)));
+        // A failure is never folded away silently (rule 4).
+        const failed = body.querySelectorAll('.tool.failed').length;
+        if (failed) meta.append(el('span', 'step-fail', failed + ' failed'));
+        if (this.live) {
+          label.textContent = 'Working…';
+          label.title = '';
+          return;
+        }
+        const sentence = stepSentence(this);
+        if (sentence) label.innerHTML = mdInline(sentence);
+        else label.textContent = countsSentence(this.n);
+        label.title = sentence || '';
+        const ms = this.endAt - this.startAt;
+        if (ms >= 500) meta.append(el('span', 'step-time', fmtSecs(ms)));
+      },
+    };
+    return st;
+  }
+
+  /** Append a thought, a narration block or an exploration tool row to the thread's open step. */
+  function stepAppend(th, node, at, kind, ref) {
+    if (!th.step) {
+      th.step = newStep(at);
+      th.body.appendChild(th.step.el);
+    }
+    const st = th.step;
+    st.body.appendChild(node);
+    st.lastAt = Math.max(st.lastAt, num(at));
+    if (kind === 'text') st.texts.push(ref);
+    else if (kind === 'thought') st.n.thought++;
+    else if (STEP_KIND[kind]) st.n[STEP_KIND[kind]]++;
+    if (ref) {
+      ref.step = st;
+      st.refs.push(ref);
+    }
+    st.refresh();
+  }
+
+  /** Note activity inside a live step (a delta or a late result), for its duration. */
+  function touchStep(st, at) {
+    if (st && st.live) st.lastAt = Math.max(st.lastAt, num(at));
+  }
+
+  /**
+   * End the thread's open step before something that must stay visible is appended (a card's
+   * tool row, a sub-agent group, a banner, the run footer). It folds to one line. At the end of a
+   * thread or run (`final`), a closing text block is moved out first so the answer stays visible.
+   */
+  function endStep(th, at, final) {
+    const st = th && th.step;
+    if (!st) return;
+    th.step = null;
+    st.live = false;
+    st.endAt = Math.max(st.lastAt, num(at));
+    const last = st.body.lastElementChild;
+    const lastText = st.texts.length ? st.texts[st.texts.length - 1] : null;
+    if (final && lastText && last === lastText.el) {
+      st.el.after(last);
+      st.texts.pop();
+      lastText.step = null;
+    }
+    const kids = Array.from(st.body.children);
+    // Nothing to fold: one item, or only the agent talking. Leave it as it is.
+    if (kids.length <= 1 || kids.every((k) => k.classList.contains('md'))) {
+      for (const r of st.refs) r.step = null;
+      // A moved row is not new: re-inserting it must not replay its entrance.
+      for (const k of kids) k.classList.remove('fl-in');
+      st.el.replaceWith(...kids);
+      return;
+    }
+    st.el.classList.remove('live');
+    st.refresh();
+  }
+
+  /** Cards that still wait for a decision; never inside anything folded (rule 3). */
+  const PENDING_CARDS = '.card.review:not(.closed), .card.approval:not(.resolved)';
+  /** Cards kept open as evidence (a refused command); a sub-agent holding one does not fold. */
+  const EVIDENCE_CARDS = '.card.approval.denied, .card.approval.blocked';
+
+  /** "11 reads · 4 searches · 48s" in a finished sub-agent's head. */
+  function paintGroupSummary(th, at) {
+    if (!th.sumEl) return;
+    const n = { read: 0, search: 0, list: 0, edit: 0, cmd: 0 };
+    for (const row of th.body.querySelectorAll('.tool')) {
+      const k = row.dataset.key;
+      if (k === 'read_file') n.read++;
+      else if (k === 'search_code' || k === 'find_symbol' || k === 'retrieve_context') n.search++;
+      else if (k === 'list_files' || k === 'repo_map') n.list++;
+      else if (k === 'propose_edit') n.edit++;
+      else if (k === 'run_command') n.cmd++;
+    }
+    const nodes = countChips([
+      ['file', n.read, plural(n.read, 'file') + ' read'],
+      ['search', n.search, n.search + (n.search === 1 ? ' search' : ' searches')],
+      ['folder', n.list, n.list + (n.list === 1 ? ' listing' : ' listings')],
+      ['pencil', n.edit, plural(n.edit, 'edit') + ' proposed'],
+      ['terminal', n.cmd, plural(n.cmd, 'command')],
+    ]);
+    // A failure inside a folded sub-agent shows on its head (rule 4).
+    const failed = th.body.querySelectorAll('.tool.failed').length;
+    if (failed) nodes.push(el('span', 'step-fail', failed + ' failed'));
+    if (at !== undefined) th.endAt = num(at);
+    const ms = num(th.endAt) - th.startAt;
+    if (th.startAt && ms >= 500) nodes.push(el('span', 'step-time', fmtSecs(ms)));
+    th.sumEl.replaceChildren(...nodes);
+  }
+
+  /**
+   * End a thread's open step before appending something that must stay visible, keeping a text
+   * block that is still streaming out of the fold (rule 2): it moves after the step and goes on
+   * receiving its deltas there.
+   */
+  function breakStep(th, at) {
+    const streaming = !!th.activeText;
+    settle(th);
+    endStep(th, at, streaming);
   }
 
   /** End the streaming indicators of a thread before something else is appended to it. */
@@ -471,12 +759,17 @@
     }
   }
 
-  function finishThread(th, completed) {
+  function finishThread(th, completed, at) {
     settle(th);
+    endStep(th, at, true);
     th.finished = true;
     if (th.group && th.statusEl) {
       th.group.classList.add('done');
       th.statusEl.replaceChildren(ic(completed ? 'check' : 'dash'));
+      paintGroupSummary(th, at);
+      // 1a: a finished sub-agent folds to its head and savings footer, unless the user opened or
+      // closed it by hand, or it still holds a card that waits for a decision.
+      if (!th.group.dataset.touched && !th.group.querySelector(PENDING_CARDS + ', ' + EVIDENCE_CARDS)) setOpen(th.group, th.headEl, false);
     }
   }
 
@@ -485,11 +778,11 @@
     if (typeof runId === 'number') {
       const run = getRun(runId, at);
       const main = run.threads.get('main');
-      settle(main);
+      breakStep(main, at);
       return main.body;
     }
     if (lastRun) {
-      settle(lastRun.threads.get('main'));
+      breakStep(lastRun.threads.get('main'), at);
       return lastRun.body;
     }
     ui.empty.hidden = true;
@@ -517,7 +810,7 @@
       }
     }
     const main = run.threads.get('main');
-    settle(main);
+    breakStep(main);
     main.body.appendChild(node);
   }
 
@@ -590,6 +883,7 @@
     const key = toolKey(name);
     const meta = TOOLS[key];
     const root = el('div', 'tool pending');
+    root.dataset.key = key;
     const head = el('div', 'tool-head');
     const iconWrap = el('span', 'tool-icon');
     iconWrap.append(ic(meta ? meta.icon : 'tool'));
@@ -635,8 +929,10 @@
           const last = rest.length ? rest[rest.length - 1] : '';
           line = oneLine('exit ' + exit[1] + (last ? ' · ' + last : ''), 160);
         }
-        root.classList.remove('pending');
-        root.classList.add(failed ? 'failed' : declined ? 'stopped' : 'done');
+        this.status = failed ? 'failed' : declined ? 'stopped' : 'done';
+        this.summary = line;
+        root.classList.remove('pending', 'done', 'failed', 'stopped');
+        root.classList.add(this.status);
         status.replaceChildren(ic(failed ? 'x' : declined ? 'dash' : 'check'));
         resultLine.textContent = line ? '↳ ' + line : '↳ (no output)';
         resultLine.hidden = false;
@@ -645,6 +941,7 @@
       stop() {
         if (this.done) return;
         this.done = true;
+        this.status = 'stopped';
         root.classList.remove('pending');
         root.classList.add('stopped');
         status.replaceChildren(ic('dash'));
@@ -809,6 +1106,60 @@
     return b;
   }
 
+  /**
+   * 1b: a resolved card folds to one line. The DOM is kept (only hidden by CSS), so later updates
+   * (applied, undone, reverted, a late shadow result) still paint the hidden parts. Click or Enter
+   * on the line opens the card again; a click on its head folds it back.
+   */
+  function compactable(card, head, line) {
+    line.classList.add('card-line');
+    line.tabIndex = 0;
+    line.setAttribute('role', 'button');
+    line.title = 'Show details';
+    let enabled = false;
+    const set = (on) => {
+      card.classList.toggle('compact', on);
+      line.setAttribute('aria-expanded', String(!on));
+      if (enabled) head.setAttribute('aria-expanded', String(!on));
+    };
+    const byUser = (on) => {
+      card.dataset.touched = '1';
+      set(on);
+      // Focus follows the visible control, so the keyboard never lands on a hidden one.
+      (on ? line : head).focus({ preventScroll: true });
+    };
+    const keys = (fn) => (e) => {
+      if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        fn();
+      }
+    };
+    line.addEventListener('click', () => byUser(false));
+    line.addEventListener('keydown', keys(() => byUser(false)));
+    head.addEventListener('click', (e) => {
+      if (enabled && !card.classList.contains('compact') && !(e.target instanceof Element && e.target.closest('button'))) byUser(true);
+    });
+    head.addEventListener('keydown', keys(() => enabled && byUser(true)));
+    return {
+      /** Allow folding; fold now, or after `delay` ms so the decision is seen first. */
+      enable(delay) {
+        if (!enabled) {
+          enabled = true;
+          head.classList.add('foldable');
+          head.tabIndex = 0;
+          head.setAttribute('role', 'button');
+          head.title = 'Fold to one line';
+        }
+        if (card.dataset.touched) return;
+        if (delay > 0) {
+          setTimeout(() => {
+            if (!card.dataset.touched) set(true);
+          }, delay);
+        } else set(true);
+      },
+    };
+  }
+
   function approvalCard(ev) {
     const assessment = readAssessment(ev.assessment);
     const card = el('div', 'card approval');
@@ -848,7 +1199,21 @@
     const allowTen = button('Allow for 10 min', 'btn', () => choose('tenMinutes'), 'Allow run_command without asking for 10 minutes');
     const deny = button('Deny', 'btn', () => choose('deny'));
     foot.append(allowOnce, allowTen, deny, verdict);
-    card.append(head, body, foot);
+    const line = el('div');
+    card.append(head, body, foot, line);
+    const fold = compactable(card, head, line);
+    /** The one-line form of an allowed command: verdict, risk badge, the command. */
+    function paintLine(decision) {
+      const cmd = el('span', 'line-main mono', oneLine(str(ev.command), 240));
+      cmd.title = str(ev.command);
+      line.replaceChildren(
+        el('span', 'line-ic ok'),
+        el('span', 'line-verdict', decision === 'auto' ? 'Auto-approved' : decision === 'tenMinutes' ? 'Allowed 10 min' : 'Allowed once'),
+      );
+      line.firstChild.append(ic('check'));
+      if (assessment) line.append(riskBadge(assessment.risk));
+      line.append(cmd, ic('chev', 'chev'));
+    }
     function setButtons(enabled) {
       allowOnce.disabled = allowTen.disabled = deny.disabled = !enabled;
     }
@@ -881,6 +1246,12 @@
           verdict.className = 'verdict ' + (decision === 'deny' ? 'bad' : 'ok');
           verdict.textContent = decisionLabel(decision);
           if (reason) verdict.title = str(reason);
+        }
+        // Denied and blocked commands stay open: a refused command is evidence for the guard.
+        card.classList.toggle('denied', decision === 'deny');
+        if (decision === 'once' || decision === 'tenMinutes' || decision === 'auto') {
+          paintLine(decision);
+          fold.enable(decision === 'auto' || !liveNow() ? 0 : 600);
         }
       },
       expire() {
@@ -1059,6 +1430,9 @@
         diff.append(ln);
       }
       box.append(hh, diff);
+      box.addEventListener('animationend', (e) => {
+        if (e.animationName === 'fl-wash') box.classList.remove('just');
+      });
       makeToggle(box, toggle);
       list.append(box);
       return { box, stateEl, accept, reject, index };
@@ -1086,6 +1460,49 @@
     const outcome = el('div', 'outcome');
     outcome.hidden = true;
     card.append(outcome);
+    const line = el('div');
+    card.append(line);
+    const fold = compactable(card, head, line);
+    let outcomeKind = '';
+
+    /** The one-line form of a closed review: outcome, path, hunks, lines, shadow test chip. */
+    function paintLine() {
+      if (!closed) return;
+      let accepted = 0;
+      let added = 0;
+      let removed = 0;
+      hunks.forEach((h, i) => {
+        if (decisions[i] !== 'accepted') return;
+        accepted++;
+        added += Number(h.added) || 0;
+        removed += Number(h.removed) || 0;
+      });
+      const icon = el('span', 'line-ic ' + outcomeKind);
+      icon.append(ic(outcomeKind === 'ok' ? 'check' : outcomeKind === 'bad' ? 'x' : 'dash'));
+      const [dir, base] = splitPath(ev.path);
+      const path = el('span', 'line-main mono');
+      path.append(el('span', 'dir', dir), el('span', 'base', base));
+      path.title = str(ev.path);
+      line.replaceChildren(icon, path);
+      if (ev.isNewFile) line.append(el('span', 'badge new', 'New'));
+      if (!undoneBadge.hidden) line.append(el('span', 'badge undone', undoneBadge.textContent));
+      const what =
+        outcomeKind === 'ok' ? accepted + '/' + plural(hunks.length, 'hunk') : outcomeKind === 'bad' ? 'rejected' : outcome.textContent.startsWith('Review cancelled') ? 'cancelled' : 'closed';
+      line.append(el('span', 'line-note', what));
+      if (accepted) {
+        const counts = el('span', 'hunk-counts');
+        counts.append(el('span', 'add', '+' + added), el('span', 'del', '−' + removed));
+        line.append(counts);
+      }
+      if (verify.status) {
+        const [kind, text] = verifyChip(verify.status);
+        const chip = el('span', 'tool-chip ' + kind);
+        chip.append(kind === 'running' ? el('span', 'spinner mini') : ic(kind === 'passed' ? 'check' : kind === 'failed' ? 'x' : kind === 'error' ? 'warn' : 'dash'), text);
+        chip.title = 'Shadow test run';
+        line.append(chip);
+      }
+      line.append(ic('chev', 'chev'));
+    }
 
     function decide(pos, decision) {
       if (closed || applying) return;
@@ -1111,6 +1528,9 @@
         it.box.classList.toggle('accepted', d === 'accepted');
         it.box.classList.toggle('rejected', d === 'rejected');
         it.box.classList.toggle('pending', d === 'pending');
+        // A short green wash on the moment a hunk is accepted (not when it is shown again later).
+        if (d === 'accepted' && it.prev && it.prev !== 'accepted' && liveNow()) it.box.classList.add('just');
+        it.prev = d;
         it.stateEl.textContent = d === 'accepted' ? 'Accepted' : d === 'rejected' ? 'Rejected' : 'Pending';
         it.accept.classList.toggle('on', d === 'accepted');
         it.reject.classList.toggle('on', d === 'rejected');
@@ -1142,7 +1562,10 @@
       outcome.replaceChildren(ic(kind === 'ok' ? 'check' : kind === 'bad' ? 'x' : 'dash'), el('span', '', text));
       if (note) outcome.append(el('span', 'sub', '· ' + note));
       outcome.hidden = false;
+      outcomeKind = kind;
       paint();
+      paintLine();
+      fold.enable(liveNow() ? 600 : 0);
     }
 
     paint();
@@ -1160,17 +1583,22 @@
         else finishWith('ok', 'Accepted ' + accepted + ' of ' + plural(total, 'hunk'), r.note);
       },
       applied(record) {
-        card.append(appliedRow(record));
+        // Before the one-line form, which stays the card's last child.
+        line.before(appliedRow(record));
       },
       undone(record) {
         undoneBadge.textContent = 'Undone';
         undoneBadge.hidden = false;
-        card.append(undoneRow(record));
+        line.before(undoneRow(record));
+        paintLine();
       },
       reverted() {
         undoneBadge.textContent = 'Reverted';
         undoneBadge.hidden = false;
+        paintLine();
       },
+      /** Repaint the one-line form (after a shadow test result). */
+      refresh: paintLine,
       verify,
       expire() {
         if (!closed) finishWith('neutral', 'Review closed (run ended)');
@@ -1200,6 +1628,7 @@
         card.verify.start(st.started);
         if (st.stale) card.verify.runEnded();
       }
+      card.refresh();
     }
     const row = findTool(st.runId, changeId);
     if (row) {
@@ -1226,7 +1655,7 @@
     if (!run.footEl) {
       run.footEl = el('div', 'run-foot');
       const main = run.threads.get('main');
-      settle(main);
+      breakStep(main);
       main.body.appendChild(run.footEl);
     }
     return run.footEl;
@@ -1294,9 +1723,209 @@
     if (!run.revert) {
       if (n === 0 || run.reverted) return;
       run.revert = revertControl(run);
-      runFoot(run).append(run.revert.el);
+      // A finished run's revert button lives on its finish card (3); otherwise in the run footer.
+      if (run.finishCard) run.finishCard.actions.prepend(run.revert.el);
+      else runFoot(run).append(run.revert.el);
     }
     if (!run.reverted) run.revert.update(n);
+    if (run.finishCard) run.finishCard.paintFiles();
+  }
+
+  /** The last test command of a run (by guard rating, else the last command) with its result. */
+  function lastTestRow(run) {
+    let lastCmd = null;
+    let lastTest = null;
+    for (const row of run.tools.values()) {
+      if (row.key !== 'run_command' || !row.done || row.status === 'stopped') continue;
+      lastCmd = row;
+      if (row.risk === 'test') lastTest = row;
+    }
+    return lastTest || lastCmd;
+  }
+
+  /** Accepted line counts of an applied record ({added, removed}), or null when unknown. */
+  function appliedLines(run, record) {
+    const hunks = run.changes.get(str(record.changeId));
+    if (!hunks || !Array.isArray(record.hunksApplied)) return null;
+    let added = 0;
+    let removed = 0;
+    for (const idx of record.hunksApplied) {
+      const h = hunks.find((x) => x.index === idx);
+      if (!h) return null;
+      added += h.added;
+      removed += h.removed;
+    }
+    return { added, removed };
+  }
+
+  /**
+   * 3: one card for a run that ended 'done': files changed, checks, context, the agent's closing
+   * message, and Revert / Open in TrueForge / Copy summary. Never green over a failing test.
+   */
+  function finishCard(run, ev, elapsed) {
+    const card = el('div', 'card finish-card');
+    const head = el('div', 'card-head');
+    const headIc = el('span', 'finish-ic');
+    const title = el('span', 'title');
+    const model = el('span', 'finish-model push', str(ev.model) || S.activeModel || '');
+    head.append(headIc, title, model);
+    const filesEl = el('div', 'finish-files');
+    const checks = el('div', 'finish-checks');
+    const actions = el('div', 'card-foot finish-actions');
+    card.append(head, filesEl, checks);
+
+    // Checks: the last test command, then the shadow runs of this run's changes.
+    const test = lastTestRow(run);
+    let warn = false;
+    let warnText = '';
+    const checkLines = [];
+    if (test) {
+      const failed = test.status === 'failed';
+      warn = failed;
+      const row = el('div', 'finish-check ' + (failed ? 'bad' : 'ok'));
+      let cmd = str(test.args).replace(/^\$\s*/, '');
+      if (cmd.startsWith('{')) {
+        try {
+          cmd = str(JSON.parse(cmd).command) || cmd;
+        } catch (_) {
+          /* a preview that is not JSON: shown as it is */
+        }
+      }
+      // Only a command the guard rated 'test' is called a test run.
+      const what = test.risk === 'test' ? 'Last test run' : 'Last command';
+      row.append(ic(failed ? 'x' : 'check'), el('span', 'what', what + (failed ? ' failed' : ' passed')));
+      if (failed) warnText = what.toLowerCase() + ' failed';
+      const detail = el('span', 'detail mono', oneLine(cmd, 120));
+      detail.title = cmd + (test.summary ? '\n' + test.summary : '');
+      row.append(detail);
+      checks.append(row);
+      checkLines.push((failed ? 'FAILED ' : 'passed ') + cmd + (test.summary ? ' (' + test.summary + ')' : ''));
+    }
+    const shadow = { passed: 0, failed: 0, other: 0 };
+    let lastShadow = '';
+    for (const st of verifies.values()) {
+      if (st.runId !== run.id || !st.result) continue;
+      const s = st.result.status;
+      if (s === 'passed') shadow.passed++;
+      else if (s === 'failed') shadow.failed++;
+      else shadow.other++;
+      lastShadow = s;
+    }
+    const shadowTotal = shadow.passed + shadow.failed + shadow.other;
+    if (shadowTotal) {
+      // No test command ran: the last shadow result is the best evidence we have.
+      if (!test && lastShadow === 'failed') {
+        warn = true;
+        warnText = 'last shadow test run failed';
+      }
+      const parts = [];
+      if (shadow.passed) parts.push(shadow.passed + ' passed');
+      if (shadow.failed) parts.push(shadow.failed + ' failed');
+      if (shadow.other) parts.push(shadow.other + ' not run');
+      const text = plural(shadowTotal, 'shadow test run') + ': ' + parts.join(', ');
+      const row = el('div', 'finish-check ' + (lastShadow === 'passed' ? 'ok' : lastShadow === 'failed' ? 'bad' : 'neutral'));
+      row.append(ic('beaker'), el('span', 'what', text));
+      row.title = 'Tests run on a sandboxed copy with each proposal applied, before review';
+      checks.append(row);
+      checkLines.push(text);
+    }
+    if (run.ctx.calls) {
+      const row = el('div', 'finish-check ctx');
+      row.append(ic('scan'), el('span', 'what', 'Context X-ray: ' + runTotalsText(run.ctx)));
+      checks.append(row);
+    }
+    if (!checks.childElementCount) checks.hidden = true;
+
+    card.classList.toggle('warn', warn);
+    headIc.append(ic(warn ? 'warn' : 'check'));
+    title.textContent = 'Done in ' + elapsed + (warn ? ' · ' + warnText : '');
+    if (ev.message) card.append(el('div', 'finish-msg', str(ev.message)));
+
+    const sessionBtn = button('', 'btn', () => post({ type: 'openSession' }), "Open this run's session in TrueForge");
+    sessionBtn.append(ic('external'), 'Open in TrueForge');
+    sessionBtn.hidden = !run.sessionId || lastRun !== run;
+    const copyBtn = button('', 'btn', () => {
+      copyText(summary());
+      copyBtn.replaceChildren(ic('check'), 'Copied');
+      setTimeout(() => copyBtn.replaceChildren(ic('copy'), 'Copy summary'), 1600);
+    }, 'Copy a plain-text summary of this run');
+    copyBtn.append(ic('copy'), 'Copy summary');
+    actions.append(sessionBtn, copyBtn);
+    card.append(actions);
+
+    /**
+     * Files this run changed, with "new" and accepted +/- lines. The line counts are shown only
+     * when every file was edited once: a second edit of a file (often after a command such as
+     * `git checkout` changed it outside the review) makes a sum misleading, and we do not estimate.
+     */
+    function fileStats() {
+      const files = new Map();
+      let exact = true;
+      for (const a of run.applied.values()) {
+        if (!a.path) continue;
+        let f = files.get(a.path);
+        if (f) exact = false;
+        else files.set(a.path, (f = { created: a.createdFile, added: 0, removed: 0, known: true, live: false, gone: 'Reverted' }));
+        if (!a.undone && !a.reverted) f.live = true;
+        else if (a.undone && !a.reverted) f.gone = 'Undone';
+        if (a.lines) {
+          f.added += a.lines.added;
+          f.removed += a.lines.removed;
+        } else exact = false;
+      }
+      if (!exact) for (const f of files.values()) f.known = false;
+      return files;
+    }
+    function paintFiles() {
+      const files = fileStats();
+      filesEl.replaceChildren();
+      if (!files.size) {
+        filesEl.append(el('div', 'finish-none', 'No edits applied'));
+        return;
+      }
+      for (const [p, f] of files) {
+        const row = el('div', 'finish-file' + (f.live ? '' : ' gone'));
+        const [dir, base] = splitPath(p);
+        const path = el('span', 'mono path');
+        path.append(el('span', 'dir', dir), el('span', 'base', base));
+        path.title = p;
+        row.append(ic('file'), path);
+        if (f.created) row.append(el('span', 'badge new', 'New'));
+        if (!f.live) row.append(el('span', 'badge undone', f.gone));
+        if (f.known) {
+          const counts = el('span', 'hunk-counts push');
+          counts.append(el('span', 'add', '+' + f.added), el('span', 'del', '−' + f.removed));
+          row.append(counts);
+        }
+        filesEl.append(row);
+      }
+    }
+    function summary() {
+      const out = ['Forgelight run: done in ' + elapsed + (model.textContent ? ' on ' + model.textContent : '')];
+      if (run.text) out.push('Request: ' + run.text);
+      const files = fileStats();
+      if (files.size) {
+        out.push('Files changed:');
+        for (const [p, f] of files) {
+          out.push('- ' + p + (f.created ? ' (new)' : '') + (f.known ? ' +' + f.added + ' -' + f.removed : '') + (f.live ? '' : ' (' + f.gone.toLowerCase() + ')'));
+        }
+      } else out.push('No edits applied.');
+      for (const c of checkLines) out.push('Check: ' + c);
+      if (run.ctx.calls) out.push('Context: ' + runTotalsText(run.ctx));
+      return out.join('\n');
+    }
+    paintFiles();
+    return { el: card, actions, paintFiles, sessionBtn };
+  }
+
+  /** Clipboard: the webview API where allowed, and the extension (vscode.env.clipboard) too. */
+  function copyText(text) {
+    post({ type: 'copy', text });
+    try {
+      if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => undefined);
+    } catch (_) {
+      /* the extension copies it */
+    }
   }
 
   function revertedBanner(records, kept) {
@@ -1519,9 +2148,24 @@
     run.xraySumEl.replaceChildren(ic('scan'), span);
   }
 
-  /** Sticky strip under the header: the latest main-thread call of the current run. */
+  /** Coloured segments of one model call, as spans sized against `denom`. */
+  function xraySegs(bar, call, denom) {
+    for (const s of call.segments) {
+      const seg = el('span');
+      seg.style.width = ((s.tokens / denom) * 100).toFixed(2) + '%';
+      seg.style.background = s.color;
+      seg.title = s.label + ': ' + fmtInt(s.tokens) + ' tokens';
+      bar.append(seg);
+    }
+  }
+
+  /**
+   * Sticky strip under the header: the latest main-thread call of the current run. It starts
+   * closed (7): the head carries the numbers and a small bar; it opens by itself once when the
+   * context passes 75 %, and remembers the user's choice.
+   */
   const xray = {
-    el: el('div', 'xray open'),
+    el: el('div', 'xray'),
     run: null,
     render() {
       const root = this.el;
@@ -1540,7 +2184,12 @@
         let pct = 0;
         if (call.contextLength) {
           pct = (call.total / call.contextLength) * 100;
-          numEl.append(el('strong', '', fmtInt(call.total)), ' / ' + fmtInt(call.contextLength) + ' tokens (' + fmtPct(pct) + ')');
+          // Full numbers, and a short form that narrow sidebars show instead.
+          const full = el('span', 'wide-only');
+          full.append(el('strong', '', fmtInt(call.total)), ' / ' + fmtInt(call.contextLength) + ' tokens (' + fmtPct(pct) + ')');
+          const short = el('span', 'narrow-only');
+          short.append(el('strong', '', fmtK(call.total)), ' / ' + fmtK(call.contextLength) + ' (' + fmtPct(pct) + ')');
+          numEl.append(full, short);
         } else {
           numEl.append(el('strong', '', fmtInt(call.total)), ' tokens in');
         }
@@ -1548,18 +2197,22 @@
         numEl.classList.toggle('full', pct >= 90);
         // The strip follows the main agent; name the thread only while it shows a sub-agent's call.
         if (call.threadId !== 'main') head.append(el('span', 'xray-thread', call.title));
-        head.append(numEl);
+        const denom = call.contextLength ? Math.max(call.contextLength, call.total) : Math.max(1, call.total);
+        // While closed, a small bar in the head hints at the breakdown.
+        const mini = el('span', 'xray-mini');
+        xraySegs(mini, call, denom);
+        head.append(mini, numEl);
         head.title = 'Latest ' + call.title + ' call' + (call.model ? ' on ' + call.model : '') + ' · ' + fmtInt(call.output) + ' output tokens';
+        // Once, for live usage only (not a replayed history), and remembered with the view state.
+        if (pct >= 75 && !prefs.xrayAutoOpened && liveNow()) {
+          prefs.xrayAutoOpened = true;
+          prefs.xrayOpen = true;
+          persist();
+          root.classList.add('open');
+        }
 
         const bar = el('div', 'xray-bar' + (call.contextLength ? '' : ' nolimit'));
-        const denom = call.contextLength ? Math.max(call.contextLength, call.total) : Math.max(1, call.total);
-        for (const s of call.segments) {
-          const seg = el('span');
-          seg.style.width = ((s.tokens / denom) * 100).toFixed(2) + '%';
-          seg.style.background = s.color;
-          seg.title = s.label + ': ' + fmtInt(s.tokens) + ' tokens';
-          bar.append(seg);
-        }
+        xraySegs(bar, call, denom);
         nodes.push(bar);
 
         const legend = el('div', 'xray-legend');
@@ -1581,7 +2234,10 @@
         nodes.push(totals);
       }
       root.replaceChildren(...nodes);
-      makeToggle(root, head);
+      makeToggle(root, head, null, (open) => {
+        prefs.xrayOpen = open;
+        persist();
+      });
     },
   };
 
@@ -1620,6 +2276,7 @@
       case 'run.started': {
         const run = getRun(ev.runId, at);
         run.startedAt = at;
+        run.text = String(ev.text || '');
         const head = userMessage(String(ev.text || ''), ev.mode);
         run.head.replaceWith(head);
         run.head = head;
@@ -1632,6 +2289,8 @@
         S.running = true;
         S.runStartedAt = at;
         stick = true;
+        // 'Open in TrueForge' opens the current session: only the newest run's finish card offers it.
+        for (const other of runs.values()) if (other !== run && other.finishCard) other.finishCard.sessionBtn.hidden = true;
         // The X-ray strip follows the newest run once the feature has reported anything.
         if (xray.run && xray.run !== run && run.id >= xray.run.id) {
           xray.run = run;
@@ -1648,34 +2307,35 @@
           run.modelEl.textContent = ev.model;
         }
         run.sessionEl.textContent = ev.sessionId ? '· TrueForge session ' + String(ev.sessionId).slice(0, 8) : '';
+        if (ev.sessionId) run.sessionId = str(ev.sessionId);
         run.sessionEl.title = ev.sessionUrl || '';
         run.meta.hidden = false;
         break;
       }
       case 'assistant.delta': {
-        const th = getThread(getRun(ev.runId, at), ev.threadId);
+        const th = getThread(getRun(ev.runId, at), ev.threadId, undefined, at);
         let block = th.messages.get(ev.messageId);
         if (!block) {
           settle(th);
           block = textBlock();
           th.messages.set(ev.messageId, block);
-          th.body.appendChild(block.el);
+          stepAppend(th, block.el, at, 'text', block);
           th.activeText = block;
-        }
+        } else touchStep(block.step, at);
         block.raw += ev.text || '';
         dirty.add(block);
         break;
       }
       case 'reasoning.delta': {
-        const th = getThread(getRun(ev.runId, at), ev.threadId);
+        const th = getThread(getRun(ev.runId, at), ev.threadId, undefined, at);
         let block = th.reasoning.get(ev.messageId);
         if (!block) {
           settle(th);
           block = reasoningBlock();
           th.reasoning.set(ev.messageId, block);
-          th.body.appendChild(block.el);
+          stepAppend(th, block.el, at, 'thought', block);
           th.activeReasoning = block;
-        }
+        } else touchStep(block.step, at);
         block.raw += ev.text || '';
         block.pending += ev.text || '';
         dirty.add(block);
@@ -1683,7 +2343,7 @@
       }
       case 'tool.call': {
         const run = getRun(ev.runId, at);
-        const th = getThread(run, ev.threadId);
+        const th = getThread(run, ev.threadId, undefined, at);
         const existing = run.tools.get(ev.toolCallId);
         if (existing) {
           existing.setArgs(ev.argsPreview);
@@ -1692,31 +2352,44 @@
         settle(th);
         const row = toolRow(ev.name, ev.argsPreview);
         run.tools.set(ev.toolCallId, row);
-        th.body.appendChild(row.el);
+        // Exploration folds into the current step; a call that owns a card ends it (rule 3).
+        if (STEP_TOOLS.has(row.key)) stepAppend(th, row.el, at, row.key, row);
+        else {
+          endStep(th, at);
+          th.body.appendChild(row.el);
+        }
         break;
       }
       case 'tool.result': {
         const run = getRun(ev.runId, at);
         let row = run.tools.get(ev.toolCallId);
         if (!row) {
-          const th = getThread(run, ev.threadId);
+          const th = getThread(run, ev.threadId, undefined, at);
           settle(th);
+          endStep(th, at);
           row = toolRow('tool', '');
           run.tools.set(ev.toolCallId, row);
           th.body.appendChild(row.el);
         }
         row.setResult(ev.preview);
+        // A late failure inside a folded step or finished sub-agent must show on its line (rule 4).
+        if (row.step) {
+          touchStep(row.step, at);
+          row.step.refresh();
+        }
+        const doneGroup = row.el.closest('.group.done');
+        if (doneGroup) for (const t of run.threads.values()) if (t.group === doneGroup) paintGroupSummary(t);
         break;
       }
       case 'thread.started': {
-        const th = getThread(getRun(ev.runId, at), ev.threadId, ev.title);
+        const th = getThread(getRun(ev.runId, at), ev.threadId, ev.title, at);
         if (th.titleEl && ev.title) th.titleEl.textContent = ev.title;
         break;
       }
       case 'thread.finished': {
         const run = getRun(ev.runId, at);
         const th = run.threads.get(ev.threadId || 'main');
-        if (th && th.group) finishThread(th, true);
+        if (th && th.group) finishThread(th, true, at);
         break;
       }
       case 'context.picked': {
@@ -1726,6 +2399,9 @@
       }
       case 'approval.command': {
         const run = getRun(ev.runId, at);
+        // The guard's rating tells the finish card which command was the last test run.
+        const own = ev.toolCallId ? run.tools.get(ev.toolCallId) : null;
+        if (own && ev.assessment && typeof ev.assessment === 'object') own.risk = str(ev.assessment.risk);
         const card = approvalCard(ev);
         approvals.set(ev.requestId, card);
         run.cards.push(card);
@@ -1742,6 +2418,14 @@
         const run = getRun(ev.runId, at);
         const card = reviewCard(ev);
         reviews.set(ev.changeId, card);
+        run.changes.set(
+          str(ev.changeId),
+          (Array.isArray(ev.hunks) ? ev.hunks : []).map((h, i) => ({
+            index: typeof h.index === 'number' ? h.index : i,
+            added: Number(h.added) || 0,
+            removed: Number(h.removed) || 0,
+          })),
+        );
         run.cards.push(card);
         // changeId is the propose_edit tool call id
         placeCard(run, 'propose_edit', card.el, ev.changeId);
@@ -1791,6 +2475,7 @@
             createdFile: record.createdFile === true,
             undone: false,
             reverted: false,
+            lines: appliedLines(run, record),
           });
           refreshRevert(run);
         }
@@ -1838,7 +2523,10 @@
           else run.revert.done(records.length ? '' : 'Nothing to revert');
         }
         const node = revertedBanner(records, kept);
-        if (run.revert) run.revert.el.after(node);
+        if (run.finishCard) {
+          run.finishCard.paintFiles();
+          run.finishCard.el.after(node);
+        } else if (run.revert) run.revert.el.after(node);
         else if (run.footEl) run.footEl.append(node);
         else looseTarget(run.id, at).appendChild(node);
         break;
@@ -1896,8 +2584,8 @@
         if (typeof ev.runId !== 'number' || !tid || tid === 'main') break;
         const run = getRun(ev.runId, at);
         const known = run.threads.has(tid);
-        const th = getThread(run, tid, str(ev.title) || undefined);
-        if (!known) finishThread(th, true); // reported without thread events: the sub-agent is done
+        const th = getThread(run, tid, str(ev.title) || undefined, at);
+        if (!known) finishThread(th, true, at); // reported without thread events: the sub-agent is done
         if (th.group) setSavings(th, ev);
         break;
       }
@@ -1921,18 +2609,21 @@
     if (!run.finished) {
       run.finished = true;
       for (const th of run.threads.values()) {
-        if (th.group && !th.finished) finishThread(th, false);
-        else settle(th);
+        if (th.group && !th.finished) finishThread(th, false, at);
+        else {
+          settle(th);
+          endStep(th, at, true);
+        }
       }
       for (const row of run.tools.values()) row.stop();
       for (const card of run.cards) card.expire();
       const main = run.threads.get('main');
-      const paths = Array.from(run.appliedPaths);
       const n = run.appliedCount;
       let node;
       if (ev.status === 'done') {
-        const changed = paths.length ? 'Changed ' + plural(paths.length, 'file') + ': ' + paths.join(', ') : 'No edits applied';
-        node = banner('green', 'check', 'Done in ' + elapsed + (ev.model ? ' · ' + ev.model : ''), [changed, ev.message || '']);
+        // 3: one finish card replaces the Done banner, the X-ray summary row and the revert row.
+        run.finishCard = finishCard(run, ev, elapsed);
+        node = run.finishCard.el;
       } else {
         const outcome = n
           ? plural(n, 'edit') + ' accepted earlier ' + (n === 1 ? 'stays' : 'stay') + ' applied (Undo is available).'
@@ -1944,8 +2635,8 @@
         }
       }
       main.body.appendChild(node);
-      // Run footer: context X-ray totals and 'Revert this run (N files)'.
-      if (run.ctx.calls) paintXraySum(run);
+      // Run footer (error / cancelled): context X-ray totals and 'Revert this run (N files)'.
+      if (run.ctx.calls && !run.finishCard) paintXraySum(run);
       refreshRevert(run);
       for (const [id, st] of verifies) {
         if (st.runId === run.id && !st.result && !st.stale) {
@@ -2031,34 +2722,86 @@
     if (S.running) updateStatusText();
   }, 1000);
 
+  const EXAMPLES = [
+    'Explain how this project is organised and where its entry points are',
+    'Find a function without tests and add a focused test for it',
+    'Look for an unhandled error path and propose a fix with a test',
+  ];
+
+  /** The welcome screen's status row (rebuilt on every state message). */
+  let connRow = null;
+
+  /**
+   * 6a: brand, one line, example prompts, live status of the three parts, the keys. Built once,
+   * so a state message does not take keyboard focus away from an example button; only the status
+   * row is repainted.
+   */
   function renderEmpty() {
     const box = ui.empty;
+    if (!connRow) buildEmpty(box);
+    paintConn();
+  }
+
+  function buildEmpty(box) {
     box.replaceChildren();
-    box.append(el('h2', '', 'Forgelight'));
-    box.append(
-      el(
-        'p',
-        '',
-        'A coding agent whose loop runs on TrueForge. It shows every file it reads and why, and every hunk it wants to write, before anything touches disk.',
-      ),
-    );
-    const ul = el('ul');
-    const item = (title, parts) => {
-      const li = el('li');
-      li.append(el('strong', '', title + ' '));
-      for (const p of parts) li.append(p);
-      ul.append(li);
+    const hero = el('div', 'hero');
+    const mark = el('span', 'brand-mark big');
+    mark.append(ic('logo'));
+    const words = el('div');
+    words.append(el('h2', '', 'Forgelight'), el('p', '', 'A coding agent on TrueForge. You see what it reads and approve every hunk before it touches disk.'));
+    hero.append(mark, words);
+    box.append(hero);
+
+    const ex = el('div', 'examples');
+    ex.append(el('div', 'examples-label', 'Try'));
+    for (const text of EXAMPLES) {
+      const b = button('', 'example', () => {
+        ui.input.value = text;
+        autosize();
+        saveDraft();
+        renderComposer();
+        ui.input.focus();
+        ui.input.setSelectionRange(text.length, text.length);
+      }, 'Put this in the input (it is not sent)');
+      b.append(ic('chev', 'chev'), el('span', '', text));
+      ex.append(b);
+    }
+    box.append(ex);
+
+    connRow = el('div', 'conn-row');
+    box.append(connRow);
+
+    const keys = el('div', 'keys-row');
+    const key = (k, text) => {
+      const s = el('span');
+      s.append(el('kbd', '', k), ' ' + text);
+      keys.append(s);
     };
-    item('Agent:', ['describe a change below. Forgelight gathers context, edits across files and asks you to review each hunk.']);
-    item('Inline edit:', ['select code and press ', el('kbd', '', isMac ? '⌘⌥E' : 'Ctrl+Alt+E'), '.']);
-    item('Context:', ['mention ', code('@path/to/file.py'), ' or ', code('@symbol'), '.']);
-    item('Undo:', ['every applied change can be undone from the header.']);
-    box.append(ul);
-    const conn = el('div', 'conn');
-    conn.append(el('span', '', 'TrueForge'), code(S.trueforgeUrl || '—'));
-    if (S.mcpUrl) conn.append(el('span', '', 'Editor MCP'), code(S.mcpUrl));
-    conn.append(el('span', '', 'Models'), code(S.models.length ? S.models.join(' → ') : '—'));
-    box.append(conn);
+    key(isMac ? '⌘⌥E' : 'Ctrl+Alt+E', 'inline edit');
+    key('Esc', 'cancel');
+    key('@', 'mention a file');
+    box.append(keys);
+  }
+
+  function paintConn() {
+    // Green only for what the host really reports; otherwise a neutral dot.
+    const primary = S.models[0] || '';
+    const h = primary ? S.health.get(primary) : null;
+    const status = connRow;
+    status.replaceChildren();
+    const part = (label, state, tip) => {
+      const p = el('span', 'conn-part');
+      p.append(el('span', 'hdot ' + state), label);
+      p.title = tip;
+      status.append(p);
+    };
+    part('TrueForge', S.session ? 'ok' : 'unknown', (S.trueforgeUrl || 'no address') + (S.session ? ' · a session was created' : ' · connects on the first request'));
+    part('Editor tools', S.mcpUrl ? 'ok' : 'unknown', S.mcpUrl ? 'MCP server listening at ' + S.mcpUrl : 'MCP server not reported yet');
+    part(
+      'Model',
+      h ? (h.status === 'ok' ? 'ok' : h.status === 'down' ? 'down' : h.status === 'skipped' ? 'skipped' : 'unknown') : 'unknown',
+      primary ? primary + ' · ' + healthTitle(h) : 'No model configured (setting forgelight.models)',
+    );
   }
 
   // -------------------------------------------------------------- composer
@@ -2066,9 +2809,15 @@
   const saved = vscode.getState() || {};
   let lastSent = typeof saved.lastSent === 'string' ? saved.lastSent : '';
   ui.input.value = typeof saved.draft === 'string' ? saved.draft : '';
+  /** Per-view preferences kept in the webview state (the X-ray strip open or closed). */
+  const prefs = { xrayOpen: saved.xrayOpen === true, xrayAutoOpened: saved.xrayAutoOpened === true };
+
+  function persist() {
+    vscode.setState({ draft: ui.input.value, lastSent, xrayOpen: prefs.xrayOpen, xrayAutoOpened: prefs.xrayAutoOpened });
+  }
 
   function saveDraft() {
-    vscode.setState({ draft: ui.input.value, lastSent });
+    persist();
   }
 
   function autosize() {
@@ -2078,6 +2827,8 @@
 
   function renderComposer() {
     const running = S.running;
+    // 5: the busy bar under the header and the breathing input box follow this class.
+    document.body.classList.toggle('fl-running', running);
     ui.send.classList.toggle('cancel', running);
     ui.send.replaceChildren(
       ic(running ? 'stop' : 'send', running ? 'fill' : ''),
@@ -2156,7 +2907,12 @@
   ui.mark.append(ic('logo'));
   // Feature 4: the Context X-ray strip lives in the (non-scrolling) header, hidden until the first usage.
   xray.el.hidden = true;
-  (document.getElementById('header') || document.body).appendChild(xray.el);
+  if (prefs.xrayOpen) xray.el.classList.add('open');
+  const headerEl = document.getElementById('header') || document.body;
+  headerEl.appendChild(xray.el);
+  // 5: a thin bar under the header slides while a run is active.
+  headerEl.appendChild(el('div', 'busy-bar'));
+  armAnim();
   ui.openSession.append(ic('external'), el('span', 'wide', 'Open in '), 'TrueForge');
   const kbd = (t) => el('kbd', '', t);
   const hint = (keys, text) => {

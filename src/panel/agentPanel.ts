@@ -148,6 +148,11 @@ export class AgentPanelProvider implements vscode.WebviewViewProvider, vscode.Di
       this.ready = true;
       this.replay();
     }
+    if (msg.type === 'copy') {
+      // The webview's own clipboard API is not reliable in every VS Code version.
+      void Promise.resolve(vscode.env.clipboard.writeText(msg.text)).catch(() => undefined);
+      return;
+    }
     // Catches both synchronous throws and rejected promises from the handler.
     Promise.resolve()
       .then(() => this.handlers.onMessage(msg))
@@ -271,6 +276,8 @@ function parsePanelMessage(raw: unknown): PanelToExtension | undefined {
       return str(m.changeId) ? { type: 'applyReview', changeId: m.changeId } : undefined;
     case 'revertRun':
       return Number.isInteger(m.runId) ? { type: 'revertRun', runId: m.runId as number } : undefined;
+    case 'copy':
+      return typeof m.text === 'string' && m.text.length > 0 && m.text.length <= 100_000 ? { type: 'copy', text: m.text } : undefined;
     default:
       return undefined;
   }

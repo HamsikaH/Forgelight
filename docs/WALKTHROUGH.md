@@ -19,7 +19,7 @@ Forgelight is a VS Code extension that **turns the editor into MCP tools** for a
 | `review/hunks.ts` | Pure diff maths: apply search/replace edits, split into hunks, apply any subset of hunks. | no |
 | `review/reviewController.ts` | The diff view: opens `vscode.diff`, per-hunk Accept/Reject (CodeLens, editor-title buttons), applies with one `WorkspaceEdit`, undo stack. | yes |
 | `context/indexer.ts`, `retrieval.ts`, `mentions.ts` | The context engine: indexes the repo, ranks files with explainable reasons, packs snippets under the token budget, resolves `@file`/`@symbol`. | no |
-| `panel/agentPanel.ts` + `media/panel.js/.css` | The Forgelight side panel (webview): streaming, context card, review card, banners, Cancel/Undo. | yes |
+| `panel/agentPanel.ts` + `media/panel.js/.css` | The Forgelight side panel (webview): streaming, folded steps, context card, review and approval cards, finish card, banners, Cancel/Undo. | yes |
 | `inline/inlineEdit.ts` | ⌘⌥E: selection + instruction → inline run. | yes |
 | `vscodeHost.ts` | Reads settings; reads files (preferring unsaved editor text); asks the user before commands. | yes |
 | `verify/shadow.ts` | Verified diffs: picks the tests covering a changed file, copies the workspace (from its realpath) to a temp shadow dir, writes the whole proposal there and runs them under the macOS sandbox (`sandbox-exec`: no writes outside the shadow/temp dirs, no outbound network but loopback, never the TrueForge port, secret-looking env vars removed; skipped where there is no sandbox). Process group killed on cancel/timeout, dir always deleted. | no |
@@ -49,6 +49,17 @@ Agent definitions: `agent/forgelight.agent.json` (agent mode, with the context-s
 3. The main agent reads the exact ranges and proposes one edit per file. Each goes through the same pause → review → apply chain.
 4. It runs the tests with `run_command`, which also pauses for approval (*Allow once* / *Allow for 10 min* / *Deny*). The command guard rates the command first: blocked patterns are refused without asking, and with `autoApproveSafeCommands` test/read commands run straight away, except reads of secrets or of files outside the workspace.
 5. **Verify loop:** if the agent stops while the last command it ran was failing, Forgelight sends a follow-up turn on the same session: "this still fails, fix it and re-run" (at most twice). **Stall nudge:** if a turn ends announcing a step it never took ("let me wait for the sub-agent"), or an inline run answers in text without calling `propose_edit`, one follow-up turn asks it to continue (`looksUnfinished` / `stallFollowUp` in `runner.ts`). Small local models do this now and then.
+
+## How the panel stays readable
+
+A Task B run streams thousands of events (one recording: 80 tool calls, 60 thoughts, 14 commands), so the panel (`media/panel.js`) groups them instead of listing them:
+
+- **Steps.** Thoughts, the agent's one-line narration and exploration calls (`read_file`, `search_code`, `find_symbol`, `list_files`, `repo_map`, `create_sub_agent`) go into the thread's current *step* (`stepAppend`). While it works, only its last three rows show under **Working…**. Anything that needs the user or must stay visible ends the step first (`endStep`): a `propose_edit` or `run_command` row (its card goes right under it), a sub-agent group, a banner, the end of the run. The finished step folds to one line: the agent's own last sentence (or counts when the model wrote none), the counts and the time. A failure inside shows as a red "N failed". The agent's closing message is moved out of the step so it stays visible.
+- **Sub-agents** fold to their head and the savings footer when they finish, unless the user toggled them or a card in them still waits.
+- **Resolved cards** fold to one line about half a second after the decision; denied and blocked commands stay open as evidence. The DOM is kept, so later updates (undo, revert, a late shadow result) still land.
+- **The finish card** sums up a run that ended `done`: files, the last test command (amber if it failed: never a green card over a failing test), shadow runs, context, and Revert / Open in TrueForge / Copy summary.
+- **Motion** plays only for live events: each node animates once, when it is first inserted (`fl-in`), never for the history the extension replays when the view is reopened.
+- **Checks.** `test/panel-preview` replays recorded runs; with `&checks=1` it watches every DOM change and records any moment where a pending card, the streaming block or a banner is hidden, and `&asHistory=1` sends a recording in one burst with old timestamps, as the extension does on reload. All recordings pass, live and as history, in both themes.
 
 ## How the context engine ranks (B1)
 

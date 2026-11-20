@@ -13,7 +13,7 @@ Built for the TrueFoundry Forge-a-thon at Techfest, IIT Bombay (2026-27) by team
 | Capability | How Forgelight does it |
 |---|---|
 | **Inline edit** | Select code, press <kbd>⌘⌥E</kbd> (<kbd>Ctrl+Alt+E</kbd>), type an instruction. The proposed change opens as a diff in the editor with **Accept / Reject on every hunk**. |
-| **Agent mode** | One request in the Forgelight panel drives a TrueForge agent through a tool loop (read, search, propose edit, run command) until done. It finds the files itself. |
+| **Agent mode** | One request in the Forgelight panel drives a TrueForge agent through a tool loop (read, search, propose edit, run command) until done. It finds the files itself. The panel folds the agent's reading into one-line steps in its own words, folds finished sub-agents and resolved cards, and ends each run with a finish card (files changed, last test run, shadow runs, context, Revert this run). |
 | **Context assembly** | `@path/to/file.py` and `@symbol` mentions, plus automatic retrieval under a **token budget**. A *Context picked* card lists every file chosen, its tokens and the reasons. |
 | **Diff review** | Every change is reviewed hunk by hunk in VS Code's diff editor; each separate change region is its own hunk. Nothing is written before you accept. A whole-file `new_content` for an existing file that would delete most of it is refused before review, and the model is told to send search/replace edits instead. Applied changes can be undone with *Forgelight: Undo Last Applied Change* (panel header), which also saves the file; <kbd>⌘Z</kbd> in the file works too but only changes the editor buffer until you save (<kbd>⌘S</kbd>). |
 | **Streaming & cancellation** | Tokens (including the model's thinking) stream in from TrueForge events. *Cancel* (button, <kbd>Esc</kbd> or <kbd>⌘⌥⌫</kbd>) stops the run at once and discards unaccepted edits, so the workspace is never half-edited. While a diff review is open, <kbd>Esc</kbd> is left to the editor; use <kbd>⌘⌥⌫</kbd> or *Reject all*. |
@@ -51,7 +51,7 @@ Built for the TrueFoundry Forge-a-thon at Techfest, IIT Bombay (2026-27) by team
 Prerequisites: Node ≥ 22.14, VS Code ≥ 1.84, and either [Ollama](https://ollama.com) (free, local) or an API key for a model provider supported by TrueForge.
 
 ```bash
-git clone <this repo> forgelight && cd forgelight
+git clone https://github.com/samuelmorningstar23/forgelight.git && cd forgelight
 npm install
 npm run build
 ```

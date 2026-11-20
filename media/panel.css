@@ -19,7 +19,17 @@
   --fl-del-bg: var(--vscode-diffEditor-removedLineBackground, var(--vscode-diffEditor-removedTextBackground, rgba(255, 0, 0, 0.2)));
   --fl-mono: var(--vscode-editor-font-family, ui-monospace, Menlo, Consolas, monospace);
   --fl-mono-size: calc(var(--vscode-editor-font-size, 13px) * 0.92);
-  --fl-radius: 6px;
+  --fl-radius: 8px;
+  /* Surfaces (5): hairline borders from the theme's foreground, a 1 px shadow on cards. */
+  /* high-contrast themes define contrastBorder: keep their strong outlines */
+  --fl-hair: var(--vscode-contrastBorder, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
+  --fl-shadow: 0 1px 2px color-mix(in srgb, #000 22%, transparent);
+  /* Forge light (5): the signature gradient, used only on the brand mark, the live step label and the busy input. */
+  --fl-ember-1: #ffb347;
+  --fl-ember-2: #ff7a3d;
+  --fl-ember-3: #ff4d6d;
+  --fl-ember: linear-gradient(135deg, var(--fl-ember-1), var(--fl-ember-2) 55%, var(--fl-ember-3));
+  --fl-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   /* Context X-ray segments (usage.inputTokensBreakdown keys), from the theme's chart palette. */
   --fl-x-harness: var(--vscode-charts-orange, #d18616);
   --fl-x-instructions: var(--vscode-charts-purple, #b180d7);
@@ -91,8 +101,21 @@ svg.ic.fill { fill: currentColor; stroke: none; }
   font-weight: 600;
   letter-spacing: 0.2px;
 }
-.brand-mark { color: var(--fl-amber); display: inline-flex; }
-.brand-mark svg.ic { width: 15px; height: 15px; }
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: #fff;
+  background: var(--fl-ember);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--fl-ember-2) 45%, transparent);
+}
+.brand-mark svg.ic { width: 12px; height: 12px; stroke-width: 1.7; }
+.brand-mark.big { width: 34px; height: 34px; border-radius: 9px; flex: none; }
+.brand-mark.big svg.ic { width: 20px; height: 20px; }
+#header { position: relative; }
 
 .status-dot {
   width: 8px;
@@ -213,6 +236,9 @@ svg.ic.fill { fill: currentColor; stroke: none; }
 .xray-head .xray-ic { color: var(--fl-link); }
 .xray.open > .xray-head .chev { transform: rotate(90deg); }
 .xray-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
@@ -243,8 +269,22 @@ svg.ic.fill { fill: currentColor; stroke: none; }
 .xray-key.out .n { margin: 0 3px 0 0; }
 .xray-totals { color: var(--fl-muted); margin-top: 2px; overflow-wrap: anywhere; }
 .xray-totals .who { color: var(--fl-fg); font-weight: 600; }
-.xray:not(.open) > .xray-legend, .xray:not(.open) > .xray-totals { display: none; }
-.xray:not(.open) > .xray-bar { margin-bottom: 0; }
+.xray:not(.open) > .xray-legend, .xray:not(.open) > .xray-totals, .xray:not(.open) > .xray-bar { display: none; }
+/* closed (7): a 48 px bar in the head hints at the breakdown */
+.xray-mini {
+  display: flex;
+  flex: none;
+  width: 48px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 3px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--fl-muted) 22%, transparent);
+}
+.xray-mini > span { display: block; height: 100%; flex: none; }
+.xray-mini + .xray-num { margin-left: 6px; }
+.xray.open .xray-mini { display: none; }
+.xray.open .xray-mini + .xray-num { margin-left: auto; }
 .fallback-badge {
   font-size: 10px;
   font-weight: 600;
@@ -978,11 +1018,223 @@ kbd {
   color: var(--vscode-keybindingLabel-foreground, var(--fl-fg));
 }
 
+/* ------------------------------------------------------------ steps (1c) */
+
+.step { min-width: 0; }
+.step-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 6px 2px 2px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--fl-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.step-head:hover { background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.1)); }
+.step-head .chev { flex: none; }
+.step.open > .step-head .chev { transform: rotate(90deg); }
+.step-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fl-fg); }
+.step-label code { font-family: var(--fl-mono); font-size: var(--fl-mono-size); background: var(--fl-code-bg); border-radius: 3px; padding: 0 3px; }
+.step-meta { display: inline-flex; align-items: center; gap: 8px; flex: none; font-size: 11px; }
+.cnt { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cnt svg.ic { width: 12px; height: 12px; vertical-align: 0; opacity: 0.85; }
+.step-time { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.step-fail { color: var(--fl-red); font-weight: 600; white-space: nowrap; }
+.step-body { margin: 4px 0 2px 8px; padding-left: 10px; border-left: 1px solid var(--fl-hair); }
+.step-body > * + * { margin-top: 6px; }
+.step:not(.live):not(.open) > .step-body { display: none; }
+/* while it works, only the last three rows of the stretch show (the streaming one is always last) */
+.step.live:not(.open) > .step-body > :nth-last-child(n + 4) { display: none; }
+.step.live > .step-head .step-label {
+  background: linear-gradient(90deg, var(--fl-muted) 0 38%, var(--fl-ember-1) 46%, var(--fl-ember-3) 54%, var(--fl-muted) 62% 100%) 0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: fl-sheen 2.2s linear infinite;
+}
+@keyframes fl-sheen { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
+/* sub-agent head summary (1a) */
+.group-sum { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; flex: none; font-size: 11px; color: var(--fl-muted); }
+.group-sum:empty { display: none; }
+.group-sum:not(:empty) + .tool-status { margin-left: 0; }
+.group.done:not(.open) { padding-bottom: 1px; }
+
+/* ------------------------------------------------- compact cards (1b) */
+
+.card-line { display: none; }
+.card.compact > :not(.card-line) { display: none; }
+.card.compact > .card-line { display: flex; }
+.card-line {
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.card-line:hover, .card-head.foldable:hover { background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.1)); }
+.card-head.foldable { cursor: pointer; }
+.card.compact { box-shadow: none; }
+.line-ic { display: inline-flex; flex: none; }
+.line-ic.ok { color: var(--fl-green); }
+.line-ic.bad { color: var(--fl-red); }
+.line-ic.neutral { color: var(--fl-muted); }
+.mono { font-family: var(--fl-mono); font-size: var(--fl-mono-size); }
+.line-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.line-main .dir, .finish-file .dir { color: var(--fl-muted); }
+.line-main .base, .finish-file .base { font-weight: 600; }
+.line-verdict { flex: none; font-weight: 600; color: var(--fl-green); white-space: nowrap; }
+.line-note { flex: none; font-size: 11px; color: var(--fl-muted); white-space: nowrap; }
+.card-line > .risk, .card-line > .tool-chip, .card-line > .badge, .card-line > .hunk-counts { flex: none; }
+.card-line > .chev { flex: none; color: var(--fl-muted); }
+.card.approval.compact { border-color: var(--fl-hair); }
+
+/* ------------------------------------------------------ finish card (3) */
+
+.card.finish-card { border-color: color-mix(in srgb, var(--fl-green) 45%, var(--fl-hair)); border-left: 3px solid var(--fl-green); }
+.card.finish-card.warn { border-color: color-mix(in srgb, var(--fl-amber) 55%, var(--fl-hair)); border-left-color: var(--fl-amber); }
+.finish-card > .card-head { background: color-mix(in srgb, var(--fl-green) 9%, transparent); }
+.finish-card.warn > .card-head { background: color-mix(in srgb, var(--fl-amber) 11%, transparent); }
+.finish-ic { display: inline-flex; flex: none; color: var(--fl-green); }
+.finish-card.warn .finish-ic { color: var(--fl-amber); }
+.finish-ic svg.ic { stroke-width: 2; }
+.finish-model { font-family: var(--fl-mono); font-size: 11px; font-weight: 400; color: var(--fl-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.finish-files { padding: 6px 9px 2px; }
+.finish-file { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 2px 0; font-size: 12px; }
+.finish-file > .ic { color: var(--fl-muted); }
+.finish-file .path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.finish-file .badge, .finish-file .hunk-counts { flex: none; }
+.finish-file.gone .path { text-decoration: line-through; opacity: 0.7; }
+.finish-none { font-size: 12px; color: var(--fl-muted); }
+.finish-checks { display: flex; flex-direction: column; gap: 3px; padding: 4px 9px 7px; }
+.finish-check { display: flex; align-items: flex-start; gap: 6px; min-width: 0; font-size: 11.5px; }
+.finish-check > .ic { flex: none; margin-top: 2px; }
+.finish-check.ok > .ic { color: var(--fl-green); }
+.finish-check.bad > .ic { color: var(--fl-red); }
+.finish-check.neutral > .ic, .finish-check.ctx > .ic { color: var(--fl-link); }
+.finish-check .what { flex: 0 1 auto; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.finish-check.bad .what { color: var(--fl-red); }
+.finish-check.ctx .what, .finish-check.neutral .what { flex: 1; font-weight: 400; color: var(--fl-muted); white-space: normal; overflow-wrap: anywhere; }
+.finish-check .detail { flex: 1 1 0; min-width: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fl-muted); }
+.finish-msg { padding: 0 9px 7px; font-size: 12px; overflow-wrap: anywhere; }
+.finish-actions .btn { display: inline-flex; align-items: center; gap: 5px; }
+.finish-actions .revert-row { display: contents; }
+.finish-actions .revert-hint { display: none; }
+
+/* ------------------------------------------------------ welcome (6a) */
+
+.hero { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.hero h2 { margin: 0; }
+.hero p { margin: 2px 0 0; font-size: 12px; }
+.examples { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+.examples-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.example {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 9px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--fl-fg);
+  background: var(--fl-card);
+  border: 1px solid var(--fl-hair);
+  border-radius: var(--fl-radius);
+  box-shadow: var(--fl-shadow);
+  cursor: pointer;
+}
+.example:hover { border-color: color-mix(in srgb, var(--fl-ember-2) 65%, var(--fl-hair)); }
+.example .chev { margin-top: 2px; color: var(--fl-ember-2); }
+.conn-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 8px; font-size: 11px; }
+.conn-part { display: inline-flex; align-items: center; gap: 5px; color: var(--fl-fg); }
+.keys-row { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; }
+
+/* --------------------------------------------- motion and surfaces (5) */
+
+.card, .tool { border-color: var(--fl-hair); box-shadow: var(--fl-shadow); }
+.btn, .icon-btn, .link-btn, .send-btn, .example, .step-head, .card-line, .tool-head {
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+.card-line:focus-visible, .step-head:focus-visible, .example:focus-visible, .card-head.foldable:focus-visible, .send-btn:focus-visible {
+  outline: 2px solid var(--fl-accent);
+  outline-offset: -2px;
+}
+.hunk-counts, .ctx-tokens, .tally, .hnote, .count-badge { font-variant-numeric: tabular-nums; }
+
+/* a thin bar under the header slides while a run is active */
+.busy-bar { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; opacity: 0; transition: opacity 200ms ease; pointer-events: none; }
+.busy-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, var(--fl-ember-1), var(--fl-ember-3), transparent);
+  transform: translateX(-100%);
+  animation: fl-slide 1.5s var(--fl-ease) infinite;
+}
+.fl-running .busy-bar { opacity: 1; }
+@keyframes fl-slide { to { transform: translateX(250%); } }
+
+/* the input box breathes while a run is active */
+.fl-running .composer-box { border-color: transparent; animation: fl-breathe 1.8s ease-in-out infinite alternate; }
+@keyframes fl-breathe {
+  from { box-shadow: 0 0 0 1px color-mix(in srgb, var(--fl-ember-2) 55%, transparent), 0 0 10px -2px color-mix(in srgb, var(--fl-ember-2) 35%, transparent); }
+  to { box-shadow: 0 0 0 1px color-mix(in srgb, var(--fl-ember-3) 70%, transparent), 0 0 18px -2px color-mix(in srgb, var(--fl-ember-3) 45%, transparent); }
+}
+
+/* entrances: each node once, when it is first inserted live (panel.js adds .fl-in; never for history) */
+.fl-in { animation: fl-rise 180ms var(--fl-ease) both; }
+@keyframes fl-rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* decisions: the moment a hunk is accepted it gets a short green wash and its state pops in */
+.hunk-state { display: inline-block; }
+.hunk.just { animation: fl-wash 700ms ease-out; }
+.hunk.just .hunk-state { animation: fl-pop 260ms var(--fl-ease); }
+@keyframes fl-wash { from { background-color: color-mix(in srgb, var(--fl-green) 24%, transparent); } }
+@keyframes fl-pop { from { opacity: 0; transform: scale(0.6); } }
+
 /* Narrow sidebars: keep the status/timer readable by shortening the header buttons. */
+.narrow-only { display: none; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
 @media (max-width: 380px) {
-  .wide { display: none; }
+  .wide, .wide-only { display: none; }
+  .narrow-only { display: inline; }
+  .finish-check .detail { display: none; }
+  /* the outcome word stays for screen readers */
+  .line-note { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .xray-mini { width: 32px; }
+  /* a finished sub-agent's head keeps its title, time and status; the counts are in its footer and body */
+  .group-kind, .group-sum .cnt { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .spinner, .status-dot.running, .md.streaming > :last-child::after { animation: none; }
+  .spinner, .status-dot.running, .md.streaming > :last-child::after,
+  .busy-bar::before, .fl-running .composer-box, .fl-in, .hunk.just, .hunk.just .hunk-state, .chev,
+  .btn, .icon-btn, .link-btn, .send-btn, .example, .step-head, .card-line, .tool-head {
+    animation: none;
+    transition: none;
+  }
+  .step.live > .step-head .step-label { animation: none; background: none; color: var(--fl-muted); }
+  .busy-bar::before { transform: none; width: 100%; opacity: 0.6; }
+  .fl-running .composer-box { border-color: var(--fl-ember-2); }
 }

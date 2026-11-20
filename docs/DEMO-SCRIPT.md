@@ -22,8 +22,8 @@ Rules that shape this script (problem statement p. 5-6):
 1. Open `src/flask/helpers.py`, select the whole `get_debug_flag` function.
 2. Press **⌘⌥E**, type exactly:
    `Treat the values 'off' and 'n' as false as well, case-insensitively, and update the docstring to list every value that is treated as false.`
-3. Show the panel: tokens streaming ("Thinking…" then text). **Cancel demo (A3):** press **Esc** (or ⌘⌥⌫) mid-stream, then show "Cancelled" and run `git status --short` (empty). Re-run the same inline edit.
-4. The diff opens in the editor (`Forgelight review: src/flask/helpers.py`). On the panel's review card, hold 2-3 s on the **Shadow test run** line (`tests/test_helpers.py · 35 passed`): the tests already ran on a sandboxed temporary copy with the proposal applied, before anything was accepted. Show the per-hunk **Accept hunk / Reject** controls; accept the hunk (if there are two hunks, accept them one at a time).
+3. Show the panel: tokens streaming under the shimmering **Working…** line ("Thinking…" then text), the orange bar sliding under the header and the glowing input box. **Cancel demo (A3):** press **Esc** (or ⌘⌥⌫) mid-stream, then show "Cancelled" and run `git status --short` (empty). Re-run the same inline edit.
+4. The diff opens in the editor (`Forgelight review: src/flask/helpers.py`). On the panel's review card, hold 2-3 s on the **Shadow test run** line (`tests/test_helpers.py · 35 passed`): the tests already ran on a sandboxed temporary copy with the proposal applied, before anything was accepted. Show the per-hunk **Accept hunk / Reject** controls; accept the hunk (if there are two hunks, accept them one at a time). About half a second after the last decision the card folds to one line (path, `2/2 hunks`, `+N −M`, `tests pass`); click the line to open it again. The run ends with the **finish card**: the file, the shadow test run and the context used.
 5. Verify in the terminal:
    `FLASK_DEBUG=off .venv/bin/python -c "from flask.helpers import get_debug_flag; print(get_debug_flag())"` → `False`
 6. **Undo demo (B2):** click **Undo last change** in the panel → file restored; `git diff --stat` empty. (Task C repeats Task A, so the tree must be clean anyway.)
@@ -33,19 +33,20 @@ Rules that shape this script (problem statement p. 5-6):
 1. In the Forgelight panel, with **no files mentioned**, type exactly:
    `Add a new built-in CLI command flask config that prints the loaded application's configuration as JSON, masking the values of any key containing SECRET, PASSWORD, TOKEN or KEY as "***". It must appear in flask --help, be covered by a test, and be documented alongside the other built-in commands.`
 2. Pause on the **Context picked** card for 2-3 seconds (files, reasons, "N / 6,000 tokens"). This is the B1 moment.
-3. Show the **context-scout** sub-agent group appear and finish; hold 2-3 s on its footer (`context-scout read ~11.9k tokens of context, returned ~380 to the main agent · −97%`) and on the **Context X-ray** strip (input tokens per model call, split into harness / instructions / tool definitions / messages, against the 64k context).
-4. For each proposed file (`src/flask/cli.py`, `tests/test_cli.py`, `docs/cli.rst`, maybe `docs/api.rst`): the diff opens, review the hunks (each card shows its **Shadow test run** result), accept. Speed up waiting.
-5. If the agent asks to run tests: the command approval card appears with its **risk badge** (`test · runs pytest`) → **Allow once** (or *Allow for 10 min*).
+3. Show the **context-scout** sub-agent group appear and work (its latest three rows under **Working…**). When it finishes it folds by itself to its head (files read, time, ✓) and its footer: hold 2-3 s on the footer (`context-scout read ~11.9k tokens of context, returned ~380 to the main agent · −97%`). Then **click the Context X-ray strip** under the header to open it (it starts closed and shows the token count and a small bar) and hold 2-3 s on the breakdown (input tokens per model call, split into harness / instructions / tool definitions / messages, against the 64k context).
+4. For each proposed file (`src/flask/cli.py`, `tests/test_cli.py`, `docs/cli.rst`, maybe `docs/api.rst`): the diff opens, review the hunks (each card shows its **Shadow test run** result), accept. Speed up waiting. Between edits the agent's reading folds into one-line steps labelled with its own sentence and counts (files read, searches, thoughts, time); click one to show what it read.
+5. If the agent asks to run tests: the command approval card appears with its **risk badge** (`test · runs pytest`) → **Allow once** (or *Allow for 10 min*). Safe test commands that ran without asking show as one line, `Auto-approved · TEST · <command>`.
 6. Click **Open in TrueForge** in the panel → the session page: show turns, tool calls, the **Sub-agent: context-scout** step and the approval events (3-5 seconds). Switch back.
 7. Verify in the terminal:
    - `.venv/bin/python -m pytest tests/test_cli.py -q` → all passed
    - `.venv/bin/flask --app <forgelight>/demo/app.py config` → JSON with `***` for SECRET/PASSWORD/TOKEN/KEY
    - `.venv/bin/flask --help` → lists `config`
    - `git status --short` → three or more modified files
+8. Hold 2 s on the **finish card** at the end of the run: the files changed, *Last test run passed*, the shadow test runs and the context totals. (If the last test run failed, the card is amber and says so.)
 
 ## Scene 3: reset (target 2:55-3:00)
 
-Click **Revert this run (N files)** in the Task B run footer (restores every file the run changed, newest first; files it created are deleted), then `git status --short` → empty. (Fallback: `git stash -u`.)
+Click **Revert this run (N files)** on the Task B finish card (restores every file the run changed, newest first; files it created are deleted), then `git status --short` → empty. (Fallback: `git stash -u`.)
 
 ## Scene 4: Task C, resilience (target 3:00-3:50)
 
@@ -57,4 +58,4 @@ Click **Revert this run (N files)** in the Task B run footer (restores every fil
 ## After recording
 
 - Trim to ≤ 4:00. Add "sped up" labels where you sped up.
-- Note the timestamps of: Task A diff and shadow test line, cancel, Task B context card, sub-agent and its savings footer, X-ray strip, risk badge, TrueForge session, Revert this run, Task C retry and Session kept banners. Put them in the write-up scorecard (`docs/WRITEUP.md` section 6), then rebuild the PDF: `python3 scripts/build_writeup_pdf.py`.
+- Note the timestamps of: Task A diff and shadow test line, cancel, Task B context card, sub-agent and its savings footer, X-ray strip, risk badge, TrueForge session, finish card, Revert this run, Task C retry and Session kept banners. Put them in the write-up scorecard (`docs/WRITEUP.md` section 6), then rebuild the PDF: `python3 scripts/build_writeup_pdf.py`.
