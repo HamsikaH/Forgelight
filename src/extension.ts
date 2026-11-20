@@ -183,6 +183,7 @@ class Forgelight {
       isRunning: () => this.busy || this.runner.running,
       run: (req) => this.startRun(req),
       revealPanel: () => this.panel.reveal(true),
+      onDidChangeReviewing: this.review.onDidChangeReviewing,
     });
     // Live assist: the menu of actions and keys (F1), the instant Python check (F2), and the
     // on-demand function check and overview (F3, F4), which are ordinary agent-mode runs.

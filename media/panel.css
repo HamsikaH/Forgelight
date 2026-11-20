@@ -370,6 +370,11 @@ svg.ic.fill { fill: currentColor; stroke: none; }
 .md ul, .md ol { margin: 2px 0 6px; padding-left: 20px; }
 .md li { margin: 1px 0; }
 .md .md-h { font-weight: 600; margin: 8px 0 3px; }
+.md .md-table { overflow-x: auto; margin: 2px 0 6px; }
+.md table { border-collapse: collapse; font-size: 0.95em; }
+.md th, .md td { border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, #8884)); padding: 2px 7px; text-align: left; vertical-align: top; }
+.md th { font-weight: 600; background: var(--vscode-textCodeBlock-background, #8881); }
+.md li > ul, .md li > ol { margin: 1px 0 2px; }
 .md code {
   font-family: var(--fl-mono);
   font-size: var(--fl-mono-size);

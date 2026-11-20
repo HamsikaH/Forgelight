@@ -62,6 +62,9 @@ export class ReviewController implements ReviewGate, ApplyGate, vscode.Disposabl
   /** Serializes applies and undos so they never interleave on the same file. */
   private ioChain: Promise<unknown> = Promise.resolve();
   private readonly lensEmitter = new vscode.EventEmitter<void>();
+  private readonly reviewingEmitter = new vscode.EventEmitter<boolean>();
+  /** Fires true when a review opens and false when it closes (the inline edit's status text follows it). */
+  readonly onDidChangeReviewing = this.reviewingEmitter.event;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private reviewingCtx: boolean | undefined;
@@ -101,7 +104,7 @@ export class ReviewController implements ReviewGate, ApplyGate, vscode.Disposabl
   });
 
   constructor(private readonly bus: ForgeEventBus) {
-    this.disposables.push(this.lensEmitter, this.acceptedDeco, this.rejectedDeco, this.labelDeco, this.hoverDeco, this.flashDeco);
+    this.disposables.push(this.lensEmitter, this.reviewingEmitter, this.acceptedDeco, this.rejectedDeco, this.labelDeco, this.hoverDeco, this.flashDeco);
   }
 
   register(context: vscode.ExtensionContext): void {
@@ -395,6 +398,7 @@ export class ReviewController implements ReviewGate, ApplyGate, vscode.Disposabl
     if (reviewing === this.reviewingCtx || this.disposed) return;
     this.reviewingCtx = reviewing;
     vscode.commands.executeCommand('setContext', REVIEWING_KEY, reviewing).then(undefined, () => undefined);
+    this.reviewingEmitter.fire(reviewing);
   }
 
   // -------------------------------------------------------------------------------------------

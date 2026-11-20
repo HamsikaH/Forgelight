@@ -13,15 +13,33 @@ export interface InlineEditDeps {
   run: (req: RunRequest) => Promise<{ outcome: RunOutcome } | { error: string }>;
   /** Show the agent panel without taking focus from the editor. */
   revealPanel: () => Promise<void>;
+  /** Fires true while a proposed change waits for the user's review, false when the review closes. */
+  onDidChangeReviewing?: vscode.Event<boolean>;
 }
 
 const CANCEL_HINT = process.platform === 'darwin' ? '⌘⌥⌫' : 'Ctrl+Alt+Backspace';
+const REVIEW_HINT = process.platform === 'darwin' ? '⌥⌘Y accept · ⌥⌘N reject' : 'Ctrl+Alt+Y accept · Ctrl+Alt+N reject';
+const THINKING_TEXT = `$(sync~spin) Forgelight: thinking… (${CANCEL_HINT} to cancel)`;
+const THINKING_TIP = 'Forgelight is working on the inline edit. Click to cancel.';
+const REVIEW_TEXT = `$(diff) Forgelight: waiting for your review (${REVIEW_HINT})`;
+const REVIEW_TIP = 'A proposed change is open in the diff editor. Accept or reject each hunk; click to cancel the run.';
 
 export function registerInlineEdit(context: vscode.ExtensionContext, deps: InlineEditDeps): void {
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1000);
-  status.text = `$(sync~spin) Forgelight: thinking… (${CANCEL_HINT} to cancel)`;
-  status.tooltip = 'Forgelight is working on the inline edit. Click to cancel.';
+  const thinking = () => {
+    status.text = THINKING_TEXT;
+    status.tooltip = THINKING_TIP;
+  };
+  thinking();
   status.command = 'forgelight.cancel';
+  // While a proposal waits for the user, the model is not thinking: say what is expected instead.
+  const reviewSub = deps.onDidChangeReviewing?.((reviewing) => {
+    if (reviewing) {
+      status.text = REVIEW_TEXT;
+      status.tooltip = REVIEW_TIP;
+    } else thinking();
+  });
+  if (reviewSub) context.subscriptions.push(reviewSub);
 
   context.subscriptions.push(
     status,
@@ -56,6 +74,8 @@ export function registerInlineEdit(context: vscode.ExtensionContext, deps: Inlin
 }
 
 async function runInline(deps: InlineEditDeps, status: vscode.StatusBarItem, text: string, target: InlineTarget): Promise<void> {
+  status.text = THINKING_TEXT;
+  status.tooltip = THINKING_TIP;
   status.show();
   deps.revealPanel().catch(() => undefined);
   try {

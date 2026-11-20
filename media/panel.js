@@ -230,7 +230,7 @@
 
   // --------------------------------------------------------- light markdown
 
-  /** Inline markdown on raw text: escapes first, then `code` and **bold**. */
+  /** Inline markdown on raw text: escapes first, then `code`, **bold** and *italic*. */
   function mdInline(text) {
     const spans = [];
     let s = escapeHtml(text).replace(/`([^`\n]+)`/g, (_, c) => {
@@ -238,23 +238,54 @@
       return '\u0000' + (spans.length - 1) + '\u0000';
     });
     s = s.replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>');
+    // *italic*: the asterisks hug the text, so "2 * 3 * 4" and a*b*c stay as they are.
+    s = s.replace(/(^|[^*\w])\*([^*\s](?:[^*\n]*?[^*\s])?)\*(?![*\w])/g, '$1<em>$2</em>');
     return s.replace(/\u0000(\d+)\u0000/g, (_, n) => '<code>' + (spans[Number(n)] || '') + '</code>');
   }
 
-  /** Safe light markdown: fences, headings (as bold lines), bullet/numbered lists, paragraphs, line breaks. */
+  /** One table cell row: "| a | b |" -> ["a", "b"] (a backslash-escaped \\| stays in the cell). */
+  function tableCells(line) {
+    const t = line.trim().replace(/^\|/, '').replace(/(^|[^\\])\|$/, '$1');
+    return t.split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, '|'));
+  }
+  const TABLE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+
+  /** Nested <ul>/<ol> from [{indent, type, start, text}]: an item indented 2+ columns deeper nests. */
+  function listHtml(items) {
+    let html = '';
+    const stack = []; // open lists: {indent, type}
+    const open = (it) => {
+      const start = it.type === 'ol' && it.start > 1 ? ' start="' + it.start + '"' : '';
+      html += '<' + it.type + start + '>';
+      stack.push({ indent: it.indent, type: it.type });
+    };
+    for (const it of items) {
+      while (stack.length && it.indent + 1 < stack[stack.length - 1].indent) html += '</li></' + stack.pop().type + '>';
+      const top = stack[stack.length - 1];
+      if (!top || it.indent >= top.indent + 2) open(it);
+      else if (top.type !== it.type) {
+        html += '</li></' + stack.pop().type + '>';
+        open(it);
+      } else html += '</li>';
+      html += '<li>' + mdInline(it.text);
+    }
+    while (stack.length) html += '</li></' + stack.pop().type + '>';
+    return html;
+  }
+
+  /** Safe light markdown: fences, headings (as bold lines), nested bullet/numbered lists, tables, paragraphs, line breaks. */
   function renderMarkdown(src) {
     const lines = String(src).replace(/\r\n?/g, '\n').split('\n');
     const out = [];
     let para = [];
-    let list = null;
+    let list = null; // [{indent, type, start, text}]
     const flushPara = () => {
       if (para.length) out.push('<p>' + para.map(mdInline).join('<br>') + '</p>');
       para = [];
     };
     const flushList = () => {
-      // Keep the source numbering ("2." after nested bullets stays 2, as in CommonMark).
-      const start = list && list.type === 'ol' && list.start > 1 ? ' start="' + list.start + '"' : '';
-      if (list) out.push('<' + list.type + start + '>' + list.items.map((t) => '<li>' + mdInline(t) + '</li>').join('') + '</' + list.type + '>');
+      // Numbering follows the source ("2." after nested bullets stays 2, as in CommonMark).
+      if (list) out.push(listHtml(list));
       list = null;
     };
     for (let i = 0; i < lines.length; i++) {
@@ -275,6 +306,20 @@
         flushList();
         continue;
       }
+      // A GFM table: a row with pipes followed by a separator row (|---|:--:|).
+      if (line.includes('|') && i + 1 < lines.length && TABLE_SEP.test(lines[i + 1]) && (lines[i + 1].includes('|') || line.trim().startsWith('|'))) {
+        flushPara();
+        flushList();
+        const head = tableCells(line);
+        const rows = [];
+        i += 2;
+        while (i < lines.length && lines[i].trim() && lines[i].includes('|')) rows.push(tableCells(lines[i++]));
+        i--;
+        const cell = (tag, c) => '<' + tag + '>' + mdInline(c) + '</' + tag + '>';
+        const body = rows.map((r) => '<tr>' + head.map((_, k) => cell('td', r[k] || '')).join('') + '</tr>').join('');
+        out.push('<div class="md-table"><table><thead><tr>' + head.map((c) => cell('th', c)).join('') + '</tr></thead><tbody>' + body + '</tbody></table></div>');
+        continue;
+      }
       const heading = /^\s{0,3}#{1,6}\s+(.*)$/.exec(line);
       if (heading) {
         flushPara();
@@ -282,19 +327,17 @@
         out.push('<div class="md-h">' + mdInline(heading[1]) + '</div>');
         continue;
       }
-      const item = /^\s*([-*+]|\d{1,3}[.)])\s+(.*)$/.exec(line);
+      const item = /^(\s*)([-*+]|\d{1,3}[.)])\s+(.*)$/.exec(line);
       if (item) {
         flushPara();
-        const type = /\d/.test(item[1]) ? 'ol' : 'ul';
-        if (!list || list.type !== type) {
-          flushList();
-          list = { type, items: [], start: type === 'ol' ? parseInt(item[1], 10) || 1 : 1 };
-        }
-        list.items.push(item[2]);
+        const type = /\d/.test(item[2]) ? 'ol' : 'ul';
+        const indent = item[1].replace(/\t/g, '    ').length;
+        if (!list) list = [];
+        list.push({ indent, type, start: type === 'ol' ? parseInt(item[2], 10) || 1 : 1, text: item[3] });
         continue;
       }
       if (list && /^\s{2,}\S/.test(line)) {
-        list.items[list.items.length - 1] += ' ' + line.trim();
+        list[list.length - 1].text += ' ' + line.trim();
         continue;
       }
       flushList();
@@ -996,6 +1039,12 @@
     return b;
   }
 
+  /** Retry banners that still say "Retrying in …"; see settleRetries(). */
+  const liveRetries = [];
+  function settleRetries(cancelled) {
+    for (const r of liveRetries.splice(0)) r.textEl.textContent = cancelled ? r.cancelled : r.done;
+  }
+
   function sysRow(iconName, cls, parts) {
     const row = el('div', 'sysrow ' + (cls || ''));
     row.append(ic(iconName));
@@ -1197,7 +1246,9 @@
       body.append(reasons);
     }
     const cwd = el('div', 'cwd');
-    cwd.append('in ', code(ev.cwd || '.'));
+    const where = str(ev.cwd).trim();
+    if (!where || where === '.' || where === './') cwd.append('in the workspace folder');
+    else cwd.append('in ', code(where));
     body.append(cwd);
     const foot = el('div', 'card-foot');
     const verdict = el('span', 'verdict');
@@ -2193,7 +2244,7 @@
       head.append(ic('chev', 'chev'), ic('scan', 'xray-ic'), el('span', 'xray-title', 'Context X-ray'));
       const nodes = [head];
       if (!call) {
-        head.append(el('span', 'xray-wait', 'waiting for the first model call…'));
+        head.append(el('span', 'xray-wait', 'fills in when the first model call ends…'));
       } else {
         const numEl = el('span', 'xray-num');
         let pct = 0;
@@ -2287,6 +2338,8 @@
   // ---------------------------------------------------------------- events
 
   function onEvent(ev, at) {
+    // New model output after a retry means the retry went through.
+    if (liveRetries.length && (ev.type === 'assistant.delta' || ev.type === 'reasoning.delta' || ev.type === 'tool.call' || ev.type === 'context.usage')) settleRetries();
     switch (ev.type) {
       case 'run.started': {
         const run = getRun(ev.runId, at);
@@ -2550,21 +2603,29 @@
         S.activeModel = ev.model || S.activeModel;
         const secs = (Number(ev.delayMs) || 0) / 1000;
         const delay = secs < 10 ? secs.toFixed(1) : String(Math.round(secs));
-        looseTarget(ev.runId, at).appendChild(
-          banner(
-            'amber',
-            'warn',
-            'Model ' + ev.model + ' failed (' + oneLine(ev.reason, 200) + '). Retrying in ' + delay + 's… (attempt ' + ev.attempt + ')',
-          ),
-        );
+        settleRetries(); // an earlier retry ran (and failed again)
+        const failed = 'Model ' + ev.model + ' failed (' + oneLine(ev.reason, 200) + ').';
+        const b = banner('amber', 'warn', failed + ' Retrying in ' + delay + 's… (attempt ' + ev.attempt + ')');
+        looseTarget(ev.runId, at).appendChild(b);
+        // Rewritten in the past tense once the run moves on: new model output, a switch, or the end.
+        const textEl = b.lastChild && b.lastChild.firstChild;
+        if (textEl) {
+          liveRetries.push({
+            textEl,
+            done: failed + ' Retried after ' + delay + 's (attempt ' + ev.attempt + ').',
+            cancelled: failed + ' The run was cancelled before the retry.',
+          });
+        }
         break;
       }
       case 'model.fallback': {
+        settleRetries();
         markSwitched(ev, at);
         noteSwitch('fallback', ev, at);
         break;
       }
       case 'model.resume': {
+        settleRetries();
         markSwitched(ev, at);
         noteSwitch('resume', ev, at);
         if (typeof ev.runId === 'number' && ev.sessionId) {
@@ -2578,6 +2639,7 @@
         const name = str(ev.model);
         if (!name) break;
         const latency = Number(ev.latencyMs);
+        if (ev.status === 'ok') settleRetries();
         S.health.set(name, {
           status: HEALTH.includes(ev.status) ? ev.status : 'unknown',
           reason: str(ev.reason),
@@ -2611,6 +2673,7 @@
         break;
       }
       case 'run.finished':
+        settleRetries(ev.status === 'cancelled');
         finishRun(ev, at);
         break;
       default:
