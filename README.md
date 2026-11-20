@@ -96,7 +96,7 @@ On Windows, `scripts/start-trueforge.sh` does not run in PowerShell or Command P
   npx -y "@truefoundry/trueforge@0.185.1"
   ```
 
-On any system, leave that terminal open and wait for `Agent server listening on http://localhost:8790` before opening the extension window (the first run downloads TrueForge). If the panel still reports "Cannot reach TrueForge", set `forgelight.trueforgeUrl` to `http://127.0.0.1:8790`.
+On any system, leave that terminal open and wait for `Agent server listening on http://localhost:8790` before opening the extension window (the first run downloads TrueForge). If the panel still reports "Cannot reach TrueForge", set `forgelight.trueforgeUrl` to `http://[::1]:8790` or `http://127.0.0.1:8790`: TrueForge may listen on only one of the two.
 
 ### 2. Configure models in TrueForge
 
