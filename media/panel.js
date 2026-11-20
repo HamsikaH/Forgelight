@@ -818,17 +818,32 @@
 
   function userMessage(text, mode) {
     const box = el('div', 'user-msg');
-    if (mode === 'inline') box.append(el('span', 'mode', 'Inline edit'));
+    const body = el('div', 'user-body');
+    if (mode === 'inline') body.append(el('span', 'mode', 'Inline edit'));
     const re = /(^|\s)(@[\w./:\-]+)/g;
     let last = 0;
     let m;
     while ((m = re.exec(text))) {
       const start = m.index + m[1].length;
-      if (start > last) box.append(text.slice(last, start));
-      box.append(el('span', 'mention', m[2]));
+      if (start > last) body.append(text.slice(last, start));
+      body.append(el('span', 'mention', m[2]));
       last = start + m[2].length;
     }
-    if (last < text.length) box.append(text.slice(last));
+    if (last < text.length) body.append(text.slice(last));
+    box.append(body);
+    // A long request (Check this function sends the function's code) shows its first lines.
+    const lines = text.split('\n').length;
+    if (lines > 8) {
+      box.classList.add('long');
+      const more = button('', 'link-btn user-more', () => {
+        const open = box.classList.toggle('expanded');
+        more.textContent = open ? 'Show less' : 'Show all ' + lines + ' lines';
+        more.setAttribute('aria-expanded', String(open));
+      });
+      more.textContent = 'Show all ' + lines + ' lines';
+      more.setAttribute('aria-expanded', 'false');
+      box.append(more);
+    }
     return box;
   }
 
@@ -2777,7 +2792,9 @@
       s.append(el('kbd', '', k), ' ' + text);
       keys.append(s);
     };
-    key(isMac ? '⌘⌥E' : 'Ctrl+Alt+E', 'inline edit');
+    key(isMac ? '⌥⌘/' : 'Ctrl+Alt+/', 'all actions and keys');
+    key(isMac ? '⌥⌘E' : 'Ctrl+Alt+E', 'edit the selection');
+    key(isMac ? '⌥⌘X' : 'Ctrl+Alt+X', 'check a function');
     key('Esc', 'cancel');
     key('@', 'mention a file');
     box.append(keys);
@@ -2923,7 +2940,8 @@
   hint('Enter', 'send');
   hint('Shift+Enter', 'newline');
   hint('Esc', 'cancel');
-  hint(isMac ? '⌘⌥E' : 'Ctrl+Alt+E', 'inline edit on a selection');
+  hint(isMac ? '⌥⌘E' : 'Ctrl+Alt+E', 'inline edit');
+  hint(isMac ? '⌥⌘/' : 'Ctrl+Alt+/', 'all keys');
 
   renderEmpty();
   renderHeader();

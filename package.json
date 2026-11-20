@@ -91,6 +91,21 @@
       {
         "command": "forgelight.focusPanel",
         "title": "Forgelight: Focus Agent Panel"
+      },
+      {
+        "command": "forgelight.showMenu",
+        "title": "Forgelight: Show Menu and Shortcut Keys",
+        "icon": "$(list-selection)"
+      },
+      {
+        "command": "forgelight.checkFunction",
+        "title": "Forgelight: Check This Function (bugs, indentation, logic, alternatives)",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "forgelight.overviewFunction",
+        "title": "Forgelight: Overview of This Function",
+        "icon": "$(book)"
       }
     ],
     "keybindings": [
@@ -110,6 +125,46 @@
         "command": "forgelight.cancel",
         "key": "escape",
         "when": "forgelight.running && !forgelight.reviewing && !editorHasSelection && !editorHasMultipleSelections && !editorHoverVisible && !editorHoverFocused && !notificationToastsVisible && !suggestWidgetVisible && !findWidgetVisible && !inQuickOpen && !inSnippetMode && !parameterHintsVisible && !renameInputVisible && !referenceSearchVisible && !inlineSuggestionVisible"
+      },
+      {
+        "command": "forgelight.showMenu",
+        "key": "ctrl+alt+/",
+        "mac": "cmd+alt+/"
+      },
+      {
+        "command": "forgelight.checkFunction",
+        "key": "ctrl+alt+x",
+        "mac": "cmd+alt+x",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "forgelight.overviewFunction",
+        "key": "ctrl+alt+u",
+        "mac": "cmd+alt+u",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "forgelight.acceptHunk",
+        "key": "ctrl+alt+y",
+        "mac": "cmd+alt+y",
+        "when": "forgelight.reviewing && !findWidgetVisible"
+      },
+      {
+        "command": "forgelight.rejectHunk",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n",
+        "when": "forgelight.reviewing && !findWidgetVisible"
+      },
+      {
+        "command": "forgelight.applyReview",
+        "key": "ctrl+alt+enter",
+        "mac": "cmd+alt+enter",
+        "when": "forgelight.reviewing && !findWidgetVisible"
+      },
+      {
+        "command": "forgelight.undoLastApplied",
+        "key": "ctrl+alt+z",
+        "mac": "cmd+alt+z"
       }
     ],
     "menus": {
@@ -145,6 +200,11 @@
           "command": "forgelight.revertLastRun",
           "when": "view == forgelight.panel",
           "group": "2_history@1"
+        },
+        {
+          "command": "forgelight.showMenu",
+          "when": "view == forgelight.panel",
+          "group": "navigation@0"
         }
       ],
       "commandPalette": [
@@ -155,6 +215,18 @@
         {
           "command": "forgelight.rejectHunk",
           "when": "false"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "forgelight.checkFunction",
+          "when": "editorLangId =~ /^(python|typescript|typescriptreact|javascript|javascriptreact)$/ || editorHasSelection",
+          "group": "forgelight@1"
+        },
+        {
+          "command": "forgelight.overviewFunction",
+          "when": "editorLangId =~ /^(python|typescript|typescriptreact|javascript|javascriptreact)$/ || editorHasSelection",
+          "group": "forgelight@2"
         }
       ]
     },
@@ -235,6 +307,11 @@
           "minimum": 0,
           "maximum": 120,
           "description": "After a model fails, skip it for this many minutes and use the next model in forgelight.models instead. The current value always applies, also to a model that already failed: 0 turns the breaker off at once. Changing forgelight.models (or this setting) resets it."
+        },
+        "forgelight.instantChecks": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Check Python files while you type, without a model: the project's own Python parses the unsaved text (`ast.parse`, never run) and reports the first syntax or indentation error, and lines that mix tabs and spaces are flagged. Shown as squiggles with the source **Forgelight**."
         }
       }
     },

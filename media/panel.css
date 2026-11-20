@@ -325,6 +325,13 @@ svg.ic.fill { fill: currentColor; stroke: none; }
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.user-msg.long:not(.expanded) > .user-body {
+  max-height: calc(1.45em * 7);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 65%, transparent);
+  mask-image: linear-gradient(to bottom, #000 65%, transparent);
+}
+.user-more { display: block; margin-top: 3px; padding: 0; white-space: normal; }
 .user-msg .mode {
   display: inline-block;
   font-size: 10px;

@@ -23,6 +23,25 @@ Built for the TrueFoundry Forge-a-thon at Techfest, IIT Bombay (2026-27) by team
 | **Run checkpoints** | *Revert this run* (panel) or *Forgelight: Revert Last Run* restores every file a run changed in one step, newest first; files the run created are deleted, and later edits of yours are kept. |
 | **Context X-ray** | Per model call, the panel shows input/output tokens and TrueForge's input breakdown (harness, instructions, tool definitions, messages) against the model's context length, and for each sub-agent how much context it read versus how much it returned to the main agent. |
 | **Command guard** | Every `run_command` is classified (test / read / write / network / destructive) and shown with a risk badge; catastrophic patterns (`rm -rf /`, `sudo`, `curl … \| sh`, `git push --force`, also when hidden in `bash -c`, `trap`, `alias`, `xargs`, `BASH_ENV`, `git -c core.fsmonitor=…`) are refused. With `forgelight.autoApproveSafeCommands`, test and read commands run without asking, except reads of secrets or of files outside the workspace. |
+| **Instant checks** | While you type in a Python file, the project's own Python parses the unsaved text (`ast.parse`, which never runs it) and the first syntax or indentation error shows as a squiggle, for example *Indentation: expected an indented block after 'if' statement on line 12*; lines that mix tabs and spaces are flagged too. No model is involved, so it is instant. `forgelight.instantChecks` turns it off. |
+| **Check / explain a function** | <kbd>⌥⌘X</kbd> asks the agent about the function under the cursor (or the selection): possible bugs, indentation that changes what runs, simpler or safer logic with the reason, and another way to get the same result with the trade-off. <kbd>⌥⌘U</kbd> gives a quick overview: what it does, how, an example call, where it is used and tested. Both are ordinary agent runs that stream into the panel; nothing is written unless you accept a diff. |
+
+### Keys
+
+<kbd>⌥⌘/</kbd> (<kbd>Ctrl+Alt+/</kbd>) opens the Forgelight menu: every action with its key. On Windows and Linux, read <kbd>⌥⌘</kbd> as <kbd>Ctrl+Alt</kbd>.
+
+| Action | macOS | Windows / Linux |
+|---|---|---|
+| Forgelight menu (all actions and keys) | <kbd>⌥⌘/</kbd> | <kbd>Ctrl+Alt+/</kbd> |
+| Edit the selection (inline edit) | <kbd>⌥⌘E</kbd> | <kbd>Ctrl+Alt+E</kbd> |
+| Check this function | <kbd>⌥⌘X</kbd> | <kbd>Ctrl+Alt+X</kbd> |
+| Overview of this function | <kbd>⌥⌘U</kbd> | <kbd>Ctrl+Alt+U</kbd> |
+| In a review: accept / reject the next hunk | <kbd>⌥⌘Y</kbd> / <kbd>⌥⌘N</kbd> | <kbd>Ctrl+Alt+Y</kbd> / <kbd>Ctrl+Alt+N</kbd> |
+| In a review: apply (undecided hunks are rejected) | <kbd>⌥⌘↩</kbd> | <kbd>Ctrl+Alt+Enter</kbd> |
+| Undo the last Forgelight change | <kbd>⌥⌘Z</kbd> | <kbd>Ctrl+Alt+Z</kbd> |
+| Cancel the run | <kbd>Esc</kbd> or <kbd>⌥⌘⌫</kbd> | <kbd>Esc</kbd> or <kbd>Ctrl+Alt+Backspace</kbd> |
+
+The keys were checked against VS Code 1.84.2's default keybindings on macOS: none is taken, except that <kbd>⌥⌘↩</kbd> is Replace All while the find widget is open, which the review key excludes.
 
 ## Architecture
 

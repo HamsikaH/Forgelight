@@ -493,8 +493,37 @@ export class ReviewController implements ReviewGate, ApplyGate, vscode.Disposabl
   // -------------------------------------------------------------------------------------------
 
   private hunkCommand(id: unknown, index: unknown, decision: FinalDecision): void {
-    if (typeof id !== 'string' || typeof index !== 'number') return;
+    if (typeof id !== 'string' || typeof index !== 'number') {
+      // From the keyboard (⌥⌘Y / ⌥⌘N): no hunk named, so decide the next undecided one.
+      this.decideNextHunk(decision);
+      return;
+    }
     if (!this.setHunkDecision(id, index, decision)) void vscode.window.showInformationMessage('Forgelight: that review is no longer open.');
+  }
+
+  /** Decide the first undecided hunk of the review in front, then bring the next one into view. */
+  private decideNextHunk(decision: FinalDecision): void {
+    const entry = this.current;
+    if (!entry || entry.settled) {
+      void vscode.window.showInformationMessage('Forgelight: no review is open.');
+      return;
+    }
+    const pos = entry.decisions.findIndex((d) => d === 'pending');
+    if (pos < 0) return;
+    const total = entry.decisions.length;
+    this.setHunkDecision(entry.change.id, entry.change.hunks[pos].index, decision);
+    const next = entry.decisions.findIndex((d) => d === 'pending');
+    const word = decision === 'accepted' ? 'Accepted' : 'Rejected';
+    if (next < 0 || entry.settled) {
+      vscode.window.setStatusBarMessage(`Forgelight: ${word} hunk ${pos + 1}/${total}.`, 3000);
+      return;
+    }
+    vscode.window.setStatusBarMessage(`Forgelight: ${word} hunk ${pos + 1}/${total}. Next: hunk ${next + 1}.`, 4000);
+    const anchor = entry.layout[next]?.anchorLine;
+    const editor = vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === entry.right.toString());
+    if (editor && anchor !== undefined && anchor < editor.document.lineCount) {
+      editor.revealRange(editor.document.lineAt(anchor).range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    }
   }
 
   /** `arg` is a changeId (panel, hover link), a resource Uri (editor/title menu) or nothing. */

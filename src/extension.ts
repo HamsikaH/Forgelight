@@ -8,6 +8,9 @@ import type { ApplyRecord, ForgeConfig, ForgeEvent, PanelToExtension, ProposedCh
 import { RepoContextEngine } from './context/retrieval';
 import { DecisionStore, RunTracker } from './decisions';
 import { ForgeEventBus } from './events';
+import { registerFunctionAsk } from './assist/functionAsk';
+import { registerInstantChecks } from './assist/instantChecks';
+import { registerMenu } from './assist/menu';
 import { registerInlineEdit } from './inline/inlineEdit';
 import { EditorMcpServer, type EditorMcpEndpoint } from './mcp/server';
 import { AgentPanelProvider } from './panel/agentPanel';
@@ -177,6 +180,16 @@ class Forgelight {
     );
     registerInlineEdit(context, {
       io: this.io,
+      isRunning: () => this.busy || this.runner.running,
+      run: (req) => this.startRun(req),
+      revealPanel: () => this.panel.reveal(true),
+    });
+    // Live assist: the menu of actions and keys (F1), the instant Python check (F2), and the
+    // on-demand function check and overview (F3, F4), which are ordinary agent-mode runs.
+    registerMenu(context);
+    registerInstantChecks(context, { relativePath: (p) => this.io.relativePath(p), root: () => this.io.root });
+    registerFunctionAsk(context, {
+      relativePath: (p) => this.io.relativePath(p),
       isRunning: () => this.busy || this.runner.running,
       run: (req) => this.startRun(req),
       revealPanel: () => this.panel.reveal(true),

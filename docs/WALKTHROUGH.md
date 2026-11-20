@@ -24,6 +24,7 @@ Forgelight is a VS Code extension that **turns the editor into MCP tools** for a
 | `vscodeHost.ts` | Reads settings; reads files (preferring unsaved editor text); asks the user before commands. | yes |
 | `verify/shadow.ts` | Verified diffs: picks the tests covering a changed file, copies the workspace (from its realpath) to a temp shadow dir, writes the whole proposal there and runs them under the macOS sandbox (`sandbox-exec`: no writes outside the shadow/temp dirs, no outbound network but loopback, never the TrueForge port, secret-looking env vars removed; skipped where there is no sandbox). Process group killed on cancel/timeout, dir always deleted. | no |
 | `safety/commandGuard.ts` | Command guard: a small shell lexer + rule table rating every `run_command` test/read/write/network/destructive, with hard blocks for catastrophic patterns. | no |
+| `assist/` | Live assist: the menu of actions and keys, the instant Python check (no model), and Check / Overview of a function on a key. `analysis.ts` and `actions.ts` are pure. | partly |
 
 Agent definitions: `agent/forgelight.agent.json` (agent mode, with the context-scout instructions) and `agent/forgelight-inline.agent.json` (inline edit: only `read_file` and `propose_edit`, no sub-agents).
 
@@ -60,6 +61,14 @@ A Task B run streams thousands of events (one recording: 80 tool calls, 60 thoug
 - **The finish card** sums up a run that ended `done`: files, the last test command (amber if it failed: never a green card over a failing test), shadow runs, context, and Revert / Open in TrueForge / Copy summary.
 - **Motion** plays only for live events: each node animates once, when it is first inserted (`fl-in`), never for the history the extension replays when the view is reopened.
 - **Checks.** `test/panel-preview` replays recorded runs; with `&checks=1` it watches every DOM change and records any moment where a pending card, the streaming block or a banner is hidden, and `&asHistory=1` sends a recording in one burst with old timestamps, as the extension does on reload. All recordings pass, live and as history, in both themes.
+
+## Live assist: menu, instant checks, check and overview (`src/assist/`)
+
+- **Menu (⌥⌘/, `menu.ts`, `actions.ts`).** A quick pick of every action with its key. `actions.ts` holds the list; a unit test checks it against the keys in `package.json`, and the keys were checked against VS Code 1.84.2's default table.
+- **Instant checks (`instantChecks.ts`).** No model. On open and 400 ms after typing stops, a Python file in the workspace is parsed by the project's own interpreter (`.venv`, `venv`, else `python3`): `python -I -c <ast.parse>` with the unsaved text on stdin, run from a temp folder so a workspace `ast.py` cannot be imported. `ast.parse` never executes the code. The first `SyntaxError` / `IndentationError` / `TabError` becomes a squiggle; lines that mix tabs and spaces get a warning. A newer keystroke kills the previous parse, and results for an older document version are dropped.
+- **Check this function (⌥⌘X) and Overview (⌥⌘U), `functionAsk.ts`.** The target is the selection, or the innermost function or method around the cursor (from the same symbol extractor the context engine uses). Forgelight sends an ordinary agent-mode request with the function's current code (unsaved edits included) and fixed questions: possible bugs, meaning-changing indentation, simpler logic with the reason, another way with the trade-off (`analysis.ts`). It reuses the whole agent path (TrueForge session, streaming, cancel, fallback), and anything it proposes still goes through the hunk review.
+- **Review keys.** ⌥⌘Y / ⌥⌘N call the accept / reject commands with no hunk named; the review controller then decides the first undecided hunk and scrolls to the next one.
+- **Why not notes that appear by themselves while typing?** On a local model each step takes 15-20 s, and a background reviewer would queue on the same model as the user's own requests. The design for later: a read-only reviewer agent with a `report_finding` tool, notes placed only where the quoted code matches exactly, and bug notes proven by a failing test on the shadow copy first.
 
 ## How the context engine ranks (B1)
 
