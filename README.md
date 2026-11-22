@@ -1,5 +1,7 @@
 # Forgelight
 
+> **TrueFoundry Forge-a-thon Round 1 submission, team Code Blooded:** [Demo video (3:51)](https://youtu.be/HKwAiuZrsNs) · [Write-up (PDF)](docs/WRITEUP.pdf) · [Agent definitions](agent/)
+
 **An editor-native coding agent for VS Code whose agent loop runs on [TrueForge](https://github.com/truefoundry/trueforge).**
 Before anything touches disk, Forgelight shows which files it read and why, and every hunk it wants to write.
 

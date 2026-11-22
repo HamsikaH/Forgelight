@@ -1,6 +1,6 @@
 # Forgelight: an editor-native coding agent on TrueForge
 
-TrueFoundry Forge-a-thon, Techfest IIT Bombay 2026-27 · Round 1 write-up · Repository: <https://github.com/HamsikaH/Forgelight> · Demo: `<VIDEO_URL>`
+TrueFoundry Forge-a-thon, Techfest IIT Bombay 2026-27 · Round 1 write-up · Repository: <https://github.com/HamsikaH/Forgelight> · Demo video: <https://youtu.be/HKwAiuZrsNs>
 
 ## 1. Team
 
@@ -50,14 +50,15 @@ Users switch models with the `forgelight.models` setting, a priority list (`["pr
 
 | Criterion | Video | Claim |
 |---|---|---|
-| A1 Inline edit | `<t>` | Diff in the editor, per-hunk Accept / Reject (CodeLens, editor-title buttons, panel) |
-| A2 Agent mode | `<t>` | Task B edits cli.py, test_cli.py and docs/cli.rst; no file named in the prompt |
-| A3 Streaming & cancel | `<t>` | Tokens stream; Cancel ends the turn in milliseconds; `git status` clean |
-| B1 Context assembly | `<t>` | Context picked card: files, reasons, tokens within the 6,000 budget |
-| B2 Diff safety | `<t>` | Nothing written before review; per-hunk decisions; Undo restores the file |
-| B3 Resilience | `<t>` | Unreachable primary retried with backoff, then the same session switched to the fallback model, history kept; workspace unchanged |
-| B4 TrueForge depth | `<t>` | Turn pauses for approval, then review; session view shows tool calls and the context-scout sub-agent |
-| C1 Video | 0:00-`<end>` | Tasks A, B, C in order, each verified on screen |
+| A1 Inline edit | 0:18 | Diff in the editor, per-hunk Accept / Reject (CodeLens, editor-title buttons, panel) |
+| A2 Agent mode | 0:41–2:14 | Task B edits cli.py, test_cli.py and docs/cli.rst; no file named in the prompt |
+| A3 Streaming & cancel | 0:02–0:16 | Tokens stream; Cancel ends the turn in milliseconds; `git status` clean |
+| B1 Context assembly | 0:41 | Context picked card: files, reasons, tokens within the 6,000 budget |
+| B2 Diff safety | 0:18, 0:34 | Nothing written before review; per-hunk decisions; Undo restores the file |
+| B3 Resilience | 3:09–3:31 | Unreachable primary retried with backoff, then the same session switched to the fallback model, history kept; workspace unchanged |
+| B4 TrueForge depth | 2:18 | Turn pauses for approval, then review; session view shows tool calls and the context-scout sub-agent |
+| C1 Video | 0:00–3:51 | Tasks A, B, C in order, each verified on screen |
+| C2 Write-up | n/a | This document: architecture, context strategy, model setup, trade-offs, scorecard, limitations |
 
 ## 7. Tools used
 
