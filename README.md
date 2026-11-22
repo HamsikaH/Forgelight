@@ -143,7 +143,7 @@ Repository: `pallets/flask` at tag `3.1.3` (commit `22d92470`), with a virtualen
 
 ```bash
 git clone --branch 3.1.3 https://github.com/pallets/flask.git && cd flask
-python3 -m venv .venv && .venv/bin/pip install -e . pytest==9.0.2 python-dotenv
+python3 -m venv .venv && .venv/bin/pip install -e . pytest==9.0.2 python-dotenv asgiref
 echo ".venv/" >> .git/info/exclude
 ```
 
