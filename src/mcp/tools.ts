@@ -374,6 +374,32 @@ async function resolveCwd(root: string, cwd: string | undefined): Promise<string
   return abs;
 }
 
+/** The workspace's virtualenv directory (.venv, then venv) when it has bin/python, else undefined. */
+export async function workspaceVenv(root: string): Promise<string | undefined> {
+  for (const name of ['.venv', 'venv']) {
+    const dir = path.join(root, name);
+    try {
+      await fs.access(path.join(dir, 'bin', 'python'));
+      return dir;
+    } catch {
+      // not this one
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Shell prefix that activates the workspace's virtualenv for one run_command, the way a developer's
+ * terminal is usually set up: `python`, `pytest` and `flask` then resolve to the project's. It goes
+ * into the bash -lc script rather than the spawn environment because a login shell's profile can
+ * rewrite PATH (macOS path_helper moves inherited entries behind /usr/bin).
+ */
+export function venvPrefix(venv: string | undefined): string {
+  if (!venv) return '';
+  const q = `'${venv.replace(/'/g, `'\\''`)}'`;
+  return `export VIRTUAL_ENV=${q}; export PATH=${q}/bin:"$PATH"; unset PYTHONHOME; `;
+}
+
 /** Run `bash -lc command` in its own process group; kill the whole group on timeout/abort. */
 function execInGroup(
   command: string,
@@ -498,7 +524,8 @@ async function runCommandTool(
     }
   };
   emit(`$ ${a.command}${relCwd !== '.' ? `   (in ${relCwd})` : ''}\n`);
-  const r = await execInGroup(a.command, cwd, timeoutSec, deps.runs.activeSignal, deps.onCommandOutput);
+  const script = venvPrefix(await workspaceVenv(deps.io.root)) + a.command;
+  const r = await execInGroup(script, cwd, timeoutSec, deps.runs.activeSignal, deps.onCommandOutput);
   if (r.spawnError) {
     emit(`[could not start: ${r.spawnError}]\n`);
     return fail(`Could not start the command: ${r.spawnError}`);

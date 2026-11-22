@@ -163,6 +163,27 @@ function verifyFollowUp(failed: { command: string; exitCode: number; tail: strin
   ].join('\n');
 }
 
+/**
+ * Follow-up turn when an agent-mode turn ends while the tests of its newest shadow run still fail on
+ * the workspace as it is now. The agent's own commands can hide that: `pytest … | tail` exits 0, a
+ * `python` that is not installed prints "command not found" with exit 0 through the pipe, or the
+ * last command was an `ls`.
+ */
+export function shadowFollowUp(file: string, r: VerifyResult): string {
+  return [
+    `Forgelight re-ran the tests that cover ${file} on the workspace as it is now, and they fail (${r.summary}):`,
+    '```',
+    ...(r.command ? [`$ ${r.command}`] : []),
+    (r.outputTail ?? '').trim() || '(no output)',
+    '```',
+    'The task is not done while these tests fail. Find the cause and fix it with propose_edit. Your earlier',
+    'accepted edits are already applied, so re-read the affected file ranges with read_file before proposing, and',
+    'do not re-propose changes that are already there. If the failure is in a test you wrote, check what the',
+    'fixtures and the code under test really do and correct the expectation or the code. Then run that command',
+    'again with run_command and only finish when it passes, with a short summary of every file you changed.',
+  ].join('\n');
+}
+
 /** Follow-up turns sent when a turn ends announcing work it did not do (small models stall like this). */
 const STALL_NUDGES = 1;
 
@@ -381,6 +402,8 @@ export function buildAgentSpec(
 /** A shadow test run (Feature 1) started for a change under review. */
 interface PendingVerify {
   changeId: string;
+  /** The change under review (its path drives the end-of-turn recheck). */
+  change: ProposedChange;
   command?: string;
   tests: string[];
   startedAt: number;
@@ -703,6 +726,24 @@ export class AgentRunner {
           attempt = 1;
           continue;
         }
+        // Verify loop, part 2: the agent's own commands can hide a failure. If the newest shadow
+        // test run of this run failed, re-run those tests on the workspace as it is now.
+        if (res.status === 'done' && state.req.mode === 'agent' && verifyRound < VERIFY_FOLLOW_UPS) {
+          const still = await this.recheckFailedVerify(state);
+          if (still) {
+            verifyRound++;
+            this.emit(state, {
+              type: 'notice',
+              runId,
+              level: 'warn',
+              text: `Verify loop ${verifyRound}/${VERIFY_FOLLOW_UPS}: the tests covering ${still.path} still fail on the workspace (${still.result.summary}). Asking the agent to fix it.`,
+            });
+            state.lastCommand = undefined;
+            message = shadowFollowUp(still.path, still.result);
+            attempt = 1;
+            continue;
+          }
+        }
         // Stall nudge: the turn ended announcing a step it never took ("let me wait for the
         // sub-agent…"), or an inline run ended without proposing anything.
         const inline = state.req.mode === 'inline';
@@ -891,6 +932,7 @@ export class AgentRunner {
     else state.signal.addEventListener('abort', onAbort, { once: true });
     const v: PendingVerify = {
       changeId: change.id,
+      change,
       command: plan.command,
       tests: [...plan.tests],
       startedAt: Date.now(),
@@ -921,6 +963,39 @@ export class AgentRunner {
       )
       .catch((err) => console.error('[forgelight] verify.finished listener failed:', err));
     return v;
+  }
+
+  /**
+   * Verify loop, part 2: when the newest shadow test run of this run failed, run the same tests on a
+   * copy of the workspace as it is now (that file as it is on disk, after the user's decisions).
+   * Returns the failure, or undefined when there is nothing to recheck or the tests pass now.
+   */
+  private async recheckFailedVerify(state: RunState): Promise<{ path: string; result: VerifyResult } | undefined> {
+    const verifier = this.deps.verifier;
+    if (!verifier || !this.deps.config().verifyBeforeAccept) return undefined;
+    let latest: PendingVerify | undefined;
+    for (const v of state.verifies.values()) if (!latest || v.startedAt >= latest.startedAt) latest = v;
+    if (!latest) return undefined;
+    if (!latest.result) await waitAtMost(latest.done, VERIFY_GRACE_MS);
+    if (latest.result?.status !== 'failed') return undefined;
+    const c = latest.change;
+    const current = await this.deps.io.readText(c.path).catch(() => undefined);
+    if (current === undefined) return undefined; // e.g. a rejected new file: nothing on disk to test
+    this.emit(state, {
+      type: 'notice',
+      runId: state.runId,
+      level: 'info',
+      text: `The last shadow test run (${c.path}) failed; running those tests again on the workspace as it is now.`,
+    });
+    const now: ProposedChange = { ...c, id: `${c.id}#recheck`, isNewFile: false, originalText: current, proposedText: current, hunks: [] };
+    let result: VerifyResult;
+    try {
+      result = await verifier.verify(now, state.signal);
+    } catch {
+      return undefined; // a recheck that cannot run never holds up the end of a run
+    }
+    if (state.signal.aborted) throw abortError();
+    return result.status === 'failed' ? { path: c.path, result } : undefined;
   }
 
   /** Shadow runs still going when the run ends: a finished run waits briefly, then the rest are stopped. */

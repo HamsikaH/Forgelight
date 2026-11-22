@@ -6,6 +6,10 @@
  *   npx esbuild test/runnerFeatures.test.ts --bundle --platform=node --outfile=/tmp/rf.js && node /tmp/rf.js
  */
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import inlineAgentJson from '../agent/forgelight-inline.agent.json';
 import agentJson from '../agent/forgelight.agent.json';
 import {
@@ -27,6 +31,7 @@ import {
 } from '../src/contracts';
 import { DecisionStore, RunTracker } from '../src/decisions';
 import { ForgeEventBus, estimateTokens } from '../src/events';
+import { venvPrefix, workspaceVenv } from '../src/mcp/tools';
 import { argsKey, pickProposeArgs } from '../src/review/hunks';
 import {
   AgentRunner,
@@ -869,6 +874,109 @@ async function main(): Promise<void> {
     assert.equal(h10.commands.requests.length, 1);
     assert.equal(h10.commands.requests[0].assessment, undefined);
     assert.equal(h10.fake.answers[0].type, 'user.tool_approval_policy');
+  }
+
+  // Verify loop, part 2: the newest shadow run failed and the agent ended with "Done." (its own
+  // commands hid the failure). The tests are re-run on the workspace as it is now: still failing ->
+  // a follow-up turn with the output; passing -> the run ends.
+  {
+    const editScript: Script = async function* (_t, fake) {
+      yield turnCreated();
+      const call = toolCall('propose_edit', { path: 'src/app.py', edits: [{ search: 'return 1', replace: 'return 7' }] });
+      const msg = message({ toolCalls: [call] });
+      yield msg;
+      yield approvalRequired(msg, call);
+      await fake.nextAnswer();
+      const out = message({ content: 'Done.' });
+      yield out;
+      yield doneOk(out);
+    };
+    const failingVerifier = (recheckPassesAfter: number) => {
+      const calls: ProposedChange[] = [];
+      const verifier: Verifier = {
+        plan: async () => ({ command: 'pytest -q tests/test_app.py', tests: ['tests/test_app.py'] }),
+        verify: async (c) => {
+          calls.push(c);
+          const rechecks = calls.filter((x) => x.id.endsWith('#recheck')).length;
+          const status = c.id.endsWith('#recheck') && rechecks > recheckPassesAfter ? 'passed' : 'failed';
+          return {
+            changeId: c.id,
+            status,
+            command: 'pytest -q tests/test_app.py',
+            tests: ['tests/test_app.py'],
+            summary: status === 'failed' ? '1 failed, 2 passed' : '3 passed',
+            outputTail: 'E   NameError: config_command',
+            durationMs: 1,
+          };
+        },
+      };
+      return { calls, verifier };
+    };
+    const followUp = (text: string): Script =>
+      async function* (t, fake) {
+        assert.match(t.content, /re-ran the tests that cover src\/app\.py on the workspace as it is now, and they fail \(1 failed, 2 passed\)/);
+        assert.match(t.content, /\$ pytest -q tests\/test_app\.py\nE {3}NameError: config_command/);
+        yield* finishWith(text)(t, fake);
+      };
+
+    // Still failing after the first recheck, passing after the second: one follow-up turn.
+    const v1 = failingVerifier(1);
+    const h1 = harness({ models: ['good/model'], scripts: [editScript, followUp('Fixed.')], verifier: v1.verifier });
+    const r1 = await h1.runner.run(agentReq);
+    assert.equal(r1.status, 'done', r1.message);
+    assert.equal(h1.fake.turns.length, 2);
+    assert.equal(h1.fake.created.length, 1, 'the follow-up stays on the same session');
+    assert.deepEqual(v1.calls.map((c) => c.id.endsWith('#recheck')), [false, true, true]);
+    const recheck = v1.calls[1];
+    assert.equal(recheck.path, 'src/app.py');
+    assert.equal(recheck.proposedText, FILES['src/app.py'], 'the recheck tests the file as it is on disk');
+    assert.deepEqual(recheck.hunks, []);
+    assert.ok(h1.ofType('notice').some((e) => /Verify loop 1\/2: the tests covering src\/app\.py still fail on the workspace \(1 failed, 2 passed\)/.test(e.text)));
+
+    // Never passing: at most two follow-ups, then the run ends normally.
+    const v2 = failingVerifier(99);
+    const h2 = harness({ models: ['good/model'], scripts: [editScript, followUp('Fixed.'), followUp('Fixed again.')], verifier: v2.verifier });
+    const r2 = await h2.runner.run(agentReq);
+    assert.equal(r2.status, 'done', r2.message);
+    assert.equal(h2.fake.turns.length, 3);
+    assert.equal(v2.calls.filter((c) => c.id.endsWith('#recheck')).length, 2);
+
+    // Passing on the first recheck (the agent fixed it in a file the shadow run did not cover): no follow-up.
+    const v3 = failingVerifier(0);
+    const h3 = harness({ models: ['good/model'], scripts: [editScript], verifier: v3.verifier });
+    assert.equal((await h3.runner.run(agentReq)).status, 'done');
+    assert.equal(h3.fake.turns.length, 1);
+
+    // Inline edits and passing shadow runs are never rechecked.
+    const v4 = failingVerifier(99);
+    const h4 = harness({ models: ['good/model'], scripts: [editScript], verifier: v4.verifier });
+    assert.equal((await h4.runner.run(inlineReq)).status, 'done');
+    assert.deepEqual(v4.calls.map((c) => c.id.endsWith('#recheck')), [false]);
+    const passing: ProposedChange[] = [];
+    const h5 = harness({
+      models: ['good/model'],
+      scripts: [editScript],
+      verifier: { plan: async () => ({ tests: ['tests/test_app.py'] }), verify: async (c) => (passing.push(c), { changeId: c.id, status: 'passed', tests: [], summary: '3 passed', durationMs: 1 }) },
+    });
+    assert.equal((await h5.runner.run(agentReq)).status, 'done');
+    assert.equal(passing.length, 1);
+  }
+
+  // run_command activates the workspace virtualenv, also in a login shell that rewrites PATH.
+  {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fl-venv-'));
+    const venv = path.join(dir, '.venv');
+    await fs.mkdir(path.join(venv, 'bin'), { recursive: true });
+    await fs.writeFile(path.join(venv, 'bin', 'python'), '#!/bin/sh\necho venv-python\n', { mode: 0o755 });
+    assert.equal(await workspaceVenv(dir), venv);
+    assert.equal(await workspaceVenv(path.join(dir, 'missing')), undefined);
+    assert.equal(venvPrefix(undefined), '');
+    assert.equal(venvPrefix("/a b/it's/.venv"), `export VIRTUAL_ENV='/a b/it'\\''s/.venv'; export PATH='/a b/it'\\''s/.venv'/bin:"$PATH"; unset PYTHONHOME; `);
+    const out = execFileSync('/bin/bash', ['-lc', `${venvPrefix(venv)}python; echo "VENV=$VIRTUAL_ENV"`], { cwd: dir, encoding: 'utf8' });
+    const lines = out.trim().split('\n');
+    assert.ok(lines.includes('venv-python'), out);
+    assert.ok(lines.includes(`VENV=${venv}`), out);
+    await fs.rm(dir, { recursive: true, force: true });
   }
 
   // Stall nudge end to end: one follow-up turn on the same session, then the run finishes.
